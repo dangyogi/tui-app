@@ -33,7 +33,7 @@ It builds on three classes that you must write with the following interfaces:
 
 import math
 
-import tui_base
+from . import tui_base
 
 
 def start(tables, top_screen=None):
@@ -170,6 +170,8 @@ class table_screen(tui_base.screen):
         match command:
             case "View/Edit":
                 return row_screen(row)
+            case "Cancel":
+                return None
             case _:
                 return row.execute(self.app, command)
 
@@ -244,10 +246,10 @@ class table_screen(tui_base.screen):
 
 class row_screen(tui_base.screen):
     def __init__(self, row):
-        super().__init__(f"{row.table_name}: {row.human_key()}",
-                         ["Items", "Products", "Inventory", "Months", "Save", "Exit"])
+        super().__init__(f"{row.table_name}: {row.human_key()}")
         self.row = row
         self.columns = self.row.columns
+        self.commands = ["Items", "Products", "Inventory", "Months", "Save", "Exit"]
 
     def init(self):
         self.value_lens = []
