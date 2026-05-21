@@ -1,0 +1,22 @@
+# pyproject.toml for tui-app
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["tui_app"]
+
+[project]
+name = "tui-app"
+version = "0.0.1"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11.2"
+dependencies = []
+
+[project.urls]
+repository = "https://github.com/dangyogi/tui-app.git"
+
+[project.scripts]
