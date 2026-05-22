@@ -9,10 +9,11 @@ It builds on three classes that you must write with the following interfaces:
     table:
         .name
         .columns
-        .table_commands     # list of strings
-        .row_commands       # list of strings, or None
-        .get_rows(**select) # returns a complete list of row objects.  This library does not support paging to the data.
-        .execute(app, command)   # for anything other than table_names or Exit
+        .table_commands          # list of strings, tui will add Back and Abort/Exit to the end of these.
+        .row_commands            # list of strings, or None
+        .get_rows(**select)      # returns a complete list of row objects.
+                                 # This library does not support paging to the data.
+        .execute(app, command)   # for anything other than table_names or Abort/Exit
 
     column:
         .name
@@ -68,8 +69,8 @@ class app:
         if command in self.tables:
             print("command is table, returning table_screen", file=self.trace_file)
             return table_screen(self.tables[command])
-        if command == 'Exit':
-            print("command is 'Exit', returning 'APP_EXIT'", file=self.trace_file)
+        if command == 'Exit' or command == 'Abort':
+            print(f"command is {command!r}, returning 'APP_EXIT'", file=self.trace_file)
             return 'APP_EXIT'
         print(f"app.execute({command=}): forwarding to screen", file=self.trace_file)
         return self.screen.table.execute(self, command)
@@ -78,13 +79,23 @@ class app:
 class table_screen(tui_base.screen):
     scroll_amount = 3
 
-    def __init__(self, table):
-        super().__init__(table.name)
+    def __init__(self, table, back=None):
+        super().__init__(table.name, back)
         self.table = table
+
+    @property
+    def commands(self):
+        ans = self.table.table_commands
+        if self.back is not None:
+            ans.append('Back')
+        if self.app.changed:
+            ans.append('Abort')
+        else:
+            ans.append('Exit')
+        return ans
 
     def init(self):
         print(f"table_screen.init({self.table.name=})", file=self.app.trace_file)
-        self.commands = self.table.table_commands
         self.rows = self.table.get_rows(self.app)
         self.row_commands = self.table.row_commands
         self.columns = self.table.columns
@@ -121,14 +132,16 @@ class table_screen(tui_base.screen):
         print(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})", file=self.app.trace_file)
         if bstate == tui_base.curses.BUTTON3_CLICKED:
             if y >= 2:
-                self.popup_y = y - 2
-                self.popup = tui_base.popup("Row", self, self.row_commands, self.row_execute, y, 3)
+                # row popup
+                self.popup_y = y - 2  # selected row#
+                self.popup = tui_base.popup(self.rows[self.first_row + self.popup_y].human_key(), self,
+                                            self.row_commands, self.row_execute, y + 1, 4)
             else:
                 # table level popup at top of screen
                 if self.popup is not None and self.popup_y >= 2:
                     self.popup.delete()
                 self.popup_y = None
-                self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 0, 3)
+                self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 1, 4)
         elif bstate == tui_base.curses.BUTTON4_PRESSED:
             self.scroll_down(self.scroll_amount)
         elif bstate == tui_base.curses.BUTTON5_PRESSED:
@@ -249,7 +262,6 @@ class row_screen(tui_base.screen):
         super().__init__(f"{row.table_name}: {row.human_key()}")
         self.row = row
         self.columns = self.row.columns
-        self.commands = ["Items", "Products", "Inventory", "Months", "Save", "Exit"]
 
     def init(self):
         self.value_lens = []
@@ -273,7 +285,7 @@ class row_screen(tui_base.screen):
                 if self.popup is not None:
                     self.popup.delete()
                 self.popup_y = None
-                self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 0, 3)
+                self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 1, 4)
         else:
             return mouse_event
 

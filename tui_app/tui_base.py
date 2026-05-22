@@ -76,8 +76,9 @@ class screen:
     width = None
     popup = None
 
-    def __init__(self, title):
+    def __init__(self, title, back=None):
         self.title = title
+        self.back = back     # screen to go back to
 
     def init(self):
         r'''Run each time run is called, but _not_ each time the screen is resized.
@@ -141,46 +142,60 @@ class screen:
 
 
 class popup:
-    def __init__(self, name, screen, commands, cmd_fn, begin_y, begin_x):
+    r'''Popup window
+
+    Blank space is added on the inside sides (but not top and bottom).
+    Blank space is added on the outside sides and top or bottom depending on outside_space.
+    '''
+
+    def __init__(self, name, screen, commands, cmd_fn, begin_y, begin_x, outside_space='below'):
         self.border_at = curses.color_pair(0xF1)
         self.name = name
         self.screen = screen
         self.commands = commands
         self.cmd_fn = cmd_fn
-        self.height = 2 + len(commands)                                 # includes box
-        self.width = 4 + max(len(command) for command in commands)      # includes box and inside spacing
-
-        if begin_y <= 0:
-            self.begin_y = self.saved_y = 0
-            self.saved_height = self.height + 1
-        elif begin_y + self.height > screen.lines:
-            self.begin_y = screen.lines + 1 - begin_y
-            self.saved_y = self.begin_y - 1
-            self.saved_height = self.height + 1
-        else:
-            self.begin_y = begin_y
-            self.saved_y = self.begin_y - 1
-            self.saved_height = self.height + 2
-
-        if begin_x <= 0:
-            self.begin_x = self.saved_x = 0
-            self.saved_width = self.width + 1
-        elif begin_x + self.width > screen.cols:
-            self.begin_x = screen.cols + 1 - begin_x
-            self.saved_x = self.begin_x - 1
-            self.saved_width = self.width + 1
-        else:
-            self.begin_x = begin_x
-            self.saved_x = self.begin_x - 1
-            self.saved_width = self.width + 2
+        self.height = 2 + len(commands)                                             # includes box
+        self.width = 4 + max(len(name), max(len(command) for command in commands))  # includes box and inside spacing
 
         print(f"popup.__init__({name=}, {commands=}, {begin_y=}, {begin_x=})", file=screen.app.trace_file)
+
+        assert 1 <= begin_y, f"popup.__init__({name=}) {begin_y=} < 1"
+        self.saved_height = self.height + 1
+        assert 1 <= begin_x <= screen.cols - self.width, \
+               f"popup.__init__({name=}) {begin_x=} outside 1 to {screen.cols - self.width}"
+
+        # begin_y, begin_x is upper left corner of box
+        # saved_y, saved_x is upper left corner of area to save and restore (includes blank space around the box)
+        if begin_y <= screen.lines - self.height:
+            self.begin_y = begin_y
+        else:
+            self.begin_y = begin_y - (self.height + 1)
+            outside_space = 'above'
+
+        match outside_space:
+            case 'below':
+                self.saved_y = self.begin_y
+            case 'above':
+                self.saved_y = self.begin_y - 1
+
+        self.begin_x = begin_x
+        self.saved_x = self.begin_x - 1
+        if self.begin_x == screen.cols - self.width:
+            # right side of box at rigth edge of screen.  Only outside space on left.
+            self.saved_width = self.width + 1
+        else:
+            self.saved_width = self.width + 2
+
+        print(f"popup.__init__: {self.begin_y=}, {self.begin_x=}, "
+              f"{self.saved_y=}, {self.saved_x=}, {self.height=}, {self.width=})",
+              file=screen.app.trace_file)
+
         self.saved_chars = [[screen.app.stdscr.inch(line, col)
                              for col in range(self.saved_x, self.saved_x + self.saved_width)]
                             for line in range(self.saved_y, self.saved_y + self.saved_height)]
         for y in range(self.saved_y, self.saved_y + self.saved_height):
             screen.app.stdscr.addstr(y, self.saved_x, ' ' * self.saved_width)
-        self.subwin = screen.app.stdscr.subwin(self.height, self.width, begin_y, begin_x)
+        self.subwin = screen.app.stdscr.subwin(self.height, self.width, self.begin_y, self.begin_x)
        #ch = 0x20 + curses.color_pair(6)
        #self.subwin.border(ch, ch, ch, ch, ch, ch, ch, ch)
        #chars = [0x20 + curses.color_pair(p) for p in range(3, 7)]
@@ -211,7 +226,7 @@ class popup:
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
         print(f"popup.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})", file=self.screen.app.trace_file)
-        if not self.enclose(y, x) or not (self.begin_y < y < self.begin_y + self.height):
+        if not self.enclose(y, x) or not (self.begin_y < y < self.begin_y + self.height - 1):
             return mouse_event
         if bstate == curses.BUTTON1_CLICKED:
             self.select(y - self.begin_y)
@@ -233,6 +248,8 @@ class popup:
 
     def select(self, y):
         r'''y in subwin coord.
+
+        So first command is 1, last command is self.height - 2
         '''
         print(f"popup.select({y=})", file=self.screen.app.trace_file)
         assert 0 < y < self.height - 1, \
