@@ -44,6 +44,8 @@ def start(tables, top_screen=None):
 class app:
     r'''Created and run by `start` fn.
     '''
+    screen = None
+
     def __init__(self, tables, top_screen=None):
         self.tables = tables
         if top_screen is None:
@@ -60,6 +62,19 @@ class app:
             while self.screen is not None:
                 self.screen = self.screen.run(self)
 
+    def draw_changed(self, title_x):
+        self.title_x = title_x
+        if self.changed:
+            self.draw_changed_banner()
+
+    def set_changed(self):
+        if not self.changed:
+            self.changed = True
+            self.draw_changed_banner()
+
+    def draw_changed_banner(self):
+        self.stdscr.addstr(0, 4, "Changed", tui_base.curses.color_pair(0xf1))
+
     def execute(self, command):
         r'''Called for screen popup.
 
@@ -68,10 +83,19 @@ class app:
         print(f"app.execute({command=})", file=self.trace_file)
         if command in self.tables:
             print("command is table, returning table_screen", file=self.trace_file)
-            return table_screen(self.tables[command])
-        if command == 'Exit' or command == 'Abort':
+            return table_screen(self.tables[command], self.screen)
+        if command == 'Back':
+            return self.screen.back
+        if command == 'Exit':
             print(f"command is {command!r}, returning 'APP_EXIT'", file=self.trace_file)
             return 'APP_EXIT'
+        if command == 'Abort':
+            print(f"command is {command!r}, returning 'APP_ABORT'", file=self.trace_file)
+            return 'APP_ABORT'
+        if command == 'Change':
+            # for testing
+            self.set_changed()
+            return None
         print(f"app.execute({command=}): forwarding to screen", file=self.trace_file)
         return self.screen.table.execute(self, command)
 
@@ -91,6 +115,7 @@ class table_screen(tui_base.screen):
         if self.app.changed:
             ans.append('Abort')
         else:
+            ans.append('Change')
             ans.append('Exit')
         return ans
 
@@ -126,7 +151,8 @@ class table_screen(tui_base.screen):
     def process_mouse(self, mouse_event):
         if self.popup is not None:
             mouse_event = self.popup.process_mouse(mouse_event)
-            if mouse_event is None or mouse_event == 'APP_EXIT' or isinstance(mouse_event, tui_base.screen):
+            if mouse_event is None or mouse_event in ('APP_EXIT', 'APP_ABORT') \
+               or isinstance(mouse_event, tui_base.screen):
                 return mouse_event
         _, x, y, _, bstate = mouse_event
         print(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})", file=self.app.trace_file)
@@ -152,7 +178,7 @@ class table_screen(tui_base.screen):
     def process_key(self, key):
         if self.popup is not None:
             key = self.popup.process_key(key)
-            if key is None or key == 'APP_EXIT' or isinstance(key, tui_base.screen):
+            if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
                 return key
         print(f"screen.process_key({key=})", file=self.app.trace_file)
         if key == 'KEY_DOWN':
@@ -275,7 +301,8 @@ class row_screen(tui_base.screen):
     def process_mouse(self, mouse_event):
         if self.popup is not None:
             mouse_event = self.popup.process_mouse(mouse_event)
-            if mouse_event is None or mouse_event == 'APP_EXIT' or isinstance(mouse_event, tui_base.screen):
+            if mouse_event is None or mouse_event in ('APP_EXIT', 'APP_ABORT') \
+               or isinstance(mouse_event, tui_base.screen):
                 return mouse_event
         _, x, y, _, bstate = mouse_event
         print(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})", file=self.app.trace_file)
@@ -292,7 +319,7 @@ class row_screen(tui_base.screen):
     def process_key(self, key):
         if self.popup is not None:
             key = self.popup.process_key(key)
-            if key is None or key == 'APP_EXIT' or isinstance(key, tui_base.screen):
+            if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
                 return key
         print(f"screen.process_key({key=})", file=self.app.trace_file)
         if key == 'KEY_DOWN':

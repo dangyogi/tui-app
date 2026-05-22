@@ -20,6 +20,7 @@ colors:
     COLOR 15 r=1000, g=1000, b=1000
 '''
 
+import sys
 import curses
 
 
@@ -100,6 +101,8 @@ class screen:
                         return mouse_event
                     if mouse_event == 'APP_EXIT':
                         return None
+                    if mouse_event == 'APP_ABORT':
+                        sys.exit(1)
                     if mouse_event is not None:
                         id, x, y, z, bstate = mouse_event
                         # FIX: anything else to do here besides ignore it?
@@ -112,6 +115,8 @@ class screen:
                         return key
                     if key == 'APP_EXIT':
                         return None
+                    if key == 'APP_ABORT':
+                        sys.exit(1)
                     if key == 'q':
                         return None  # quit
                 app.stdscr.refresh() # does not refresh subwin the first time its called, but gets it the second time(??)
@@ -134,7 +139,9 @@ class screen:
         if self.popup is not None:
             self.popup.delete()   # doesn't get redrawn
         self.app.stdscr.erase()
-        self.app.stdscr.addstr(0, (self.width - len(self.title)) // 2, self.title, curses.A_REVERSE)   # center title
+        title_x = (self.width - len(self.title)) // 2   # center title
+        self.app.stdscr.addstr(0, title_x, self.title, curses.A_REVERSE)   # center title
+        self.app.draw_changed(title_x)
         self.draw_body()
 
     def draw_body(self):
