@@ -375,11 +375,10 @@ class row_screen(tui_base.screen):
             lineno += nlines
 
         # FIX: delete debug code:
-        for column, subwin, lineno in zip(self.columns, self.subwins, lineno_by_col):
+        for column, subwin in zip(self.columns, self.subwins):
             value = self.row.get(column.name)
-            #data = subwin.instr(lineno, begin_x, 100).decode('utf-8').rstrip()
-            data = subwin.instr(100).decode('utf-8').rstrip()
-            print(f"{column.name=} at {lineno=}, {begin_x=}: {value=!r}, {data=!r}", file=self.app.trace_file)
+            data = subwin.instr(0, 0).decode('utf-8').rstrip()
+            print(f"{column.name=}: {value=!r}, {data=!r}", file=self.app.trace_file)
 
         # draw command buttons
         self.button_y = lineno + 3
