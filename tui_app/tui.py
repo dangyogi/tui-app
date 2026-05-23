@@ -9,8 +9,8 @@ It builds on three classes that you must write with the following interfaces:
     table:
         .name
         .columns
-        .table_commands          # list of strings, tui will add Back and Abort/Exit to the end of these.
-        .row_commands            # list of strings, or None
+        .screen_popup_commands   # list of strings, tui will add Back and Abort/Exit to the end of these.
+        .row_popup_commands      # list of strings, or None for row popup in table screen
         .get_rows(**select)      # returns a complete list of row objects.
                                  # This library does not support paging to the data.
         .execute(app, command)   # for anything other than table_names or Abort/Exit
@@ -106,10 +106,11 @@ class table_screen(tui_base.screen):
     def __init__(self, table, back=None):
         super().__init__(table.name, back)
         self.table = table
+        self.first_row = 0
 
     @property
     def commands(self):
-        ans = self.table.table_commands
+        ans = self.table.screen_popup_commands
         if self.back is not None:
             ans.append('Back')
         if self.app.changed:
@@ -120,20 +121,23 @@ class table_screen(tui_base.screen):
         return ans
 
     def init(self):
+        r'''Run each time run is called, but _not_ each time the screen is resized.
+        '''
         print(f"table_screen.init({self.table.name=})", file=self.app.trace_file)
         self.rows = self.table.get_rows(self.app)
-        self.row_commands = self.table.row_commands
+        self.row_popup_commands = self.table.row_popup_commands
         self.columns = self.table.columns
         self.max_lens = []
         self.column_names = []
         for column in self.columns:
-            max_len = 0
-            for row in self.rows:
-                value = row.get(column.name)
-                if len(value) > max_len:
-                    max_len = len(value)
             if column.min_width is not None:
                 max_len = column.min_width
+            else:
+                max_len = 0
+                for row in self.rows:
+                    value = row.get(column.name)
+                    if len(value) > max_len:
+                        max_len = len(value)
             if len(column.name) > max_len:
                 name = column.abbr
             else:
@@ -143,7 +147,6 @@ class table_screen(tui_base.screen):
                 max_len = len(name)
             self.max_lens.append(max_len)
         self.width = sum(self.max_lens) + len(self.max_lens) - 1
-        self.first_row = 0
         print(f"table_screen.init({self.table.name=}, {self.width=})", file=self.app.trace_file)
         for col, max_len in zip(self.column_names, self.max_lens):
             print(f"{col=}, {max_len=}", file=self.app.trace_file)
@@ -161,7 +164,7 @@ class table_screen(tui_base.screen):
                 # row popup
                 self.popup_y = y - 2  # selected row#
                 self.popup = tui_base.popup(self.rows[self.first_row + self.popup_y].human_key(), self,
-                                            self.row_commands, self.row_execute, y + 1, 4)
+                                            self.row_popup_commands, self.row_execute, y + 1, 4)
             else:
                 # table level popup at top of screen
                 if self.popup is not None and self.popup_y >= 2:
@@ -208,7 +211,7 @@ class table_screen(tui_base.screen):
         row = self.rows[self.first_row + self.popup_y]
         match command:
             case "View/Edit":
-                return row_screen(row)
+                return row_screen(row, self)
             case "Cancel":
                 return None
             case _:
@@ -264,7 +267,7 @@ class table_screen(tui_base.screen):
                            tui_base.curses.A_REVERSE)    # just barely...
                           #tui_base.curses.color_pair(0xF0))       # not seeing a difference between high/low white...
                           #tui_base.curses.color_pair(0xFf))       # solid white...
-        self.draw_rows()
+        self.draw_rows(self.first_row)
 
     def draw_rows(self, first_row=0, first_line=2, nlines=None):
         if nlines is None:
@@ -284,43 +287,49 @@ class table_screen(tui_base.screen):
 
 
 class row_screen(tui_base.screen):
-    def __init__(self, row):
-        super().__init__(f"{row.table_name}: {row.human_key()}")
+    def __init__(self, row, back=None):
+        super().__init__(f"{row.table_name}: {row.human_key()}", back)
         self.row = row
         self.columns = self.row.columns
+        self.commands = list(row.commands) + ['Cancel', 'Submit']
 
     def init(self):
-        self.value_lens = []
         self.max_col_name_len = 0
         for column in self.columns:
-            self.value_lens.append(self.row.get(column.name))
             if len(column.name) > self.max_col_name_len:
                 self.max_col_name_len = len(column.name)
         print(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}", file=self.app.trace_file)
 
     def process_mouse(self, mouse_event):
-        if self.popup is not None:
-            mouse_event = self.popup.process_mouse(mouse_event)
-            if mouse_event is None or mouse_event in ('APP_EXIT', 'APP_ABORT') \
-               or isinstance(mouse_event, tui_base.screen):
-                return mouse_event
+       #if self.popup is not None:
+       #    mouse_event = self.popup.process_mouse(mouse_event)
+       #    if mouse_event is None or mouse_event in ('APP_EXIT', 'APP_ABORT') \
+       #       or isinstance(mouse_event, tui_base.screen):
+       #        return mouse_event
         _, x, y, _, bstate = mouse_event
-        print(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})", file=self.app.trace_file)
-        if bstate == tui_base.curses.BUTTON3_CLICKED:
-            if y < 2:
-                # table level popup at top of screen
-                if self.popup is not None:
-                    self.popup.delete()
-                self.popup_y = None
-                self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 1, 4)
+        print(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})",
+              file=self.app.trace_file)
+        if bstate == tui_base.curses.BUTTON1_CLICKED:
+            if y == self.button_y:
+                for i, (button_x_first, button_x_last) in enumerate(self.command_buttons_x):
+                    if button_x_first <= x <= button_x_last:
+                        return self.execute(self.commands[i])
+        elif bstate == tui_base.curses.BUTTON3_CLICKED:
+           #if y < 2 and self.commands:
+           #    # table level popup at top of screen
+           #    if self.popup is not None:
+           #        self.popup.delete()
+           #    self.popup_y = None
+           #    self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 1, 4)
+           pass
         else:
             return mouse_event
 
     def process_key(self, key):
-        if self.popup is not None:
-            key = self.popup.process_key(key)
-            if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
-                return key
+       #if self.popup is not None:
+       #    key = self.popup.process_key(key)
+       #    if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
+       #        return key
         print(f"screen.process_key({key=})", file=self.app.trace_file)
         if key == 'KEY_DOWN':
             self.scroll_up(self.scroll_amount)
@@ -329,22 +338,67 @@ class row_screen(tui_base.screen):
         else:
             return key
 
+    def execute(self, command):
+        print(f"row_screen.execute({command=})", file=self.app.trace_file)
+        match command:
+            case 'Cancel':
+                print(f"Cancel command going back to screen {self.back.title}", file=self.app.trace_file)
+                return self.back
+            case 'Submit':
+                print("Submit command not implemented", file=self.app.trace_file)
+                return self.back
+
     def draw_body(self):
         print(f"draw_body(): {len(self.columns)=}", file=self.app.trace_file)
         begin_x = self.max_col_name_len + 2
         width = self.cols - begin_x
         self.subwins = []
         lineno = 2
+        lineno_by_col = []
         for column in self.columns:
             self.app.stdscr.addstr(lineno, 0, f"{column.name}:")
             value = self.row.get(column.name)
             value_len = len(value)
-            nlines = math.ceil(value_len * 1.2 / width)
-            print(f"{column.name=}, {value_len=}, {nlines=}", file=self.app.trace_file)
+            nlines = max(1, math.ceil(value_len * 1.2 / width))
+            lineno_by_col.append(lineno)
+            print(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {begin_x=}", file=self.app.trace_file)
             subwin = self.app.stdscr.subwin(nlines, width, lineno, begin_x)
-            subwin.addstr(0, 0, value)
+            if column.can_edit:
+                subwin.addstr(0, 0, value)
+            else:
+                print(f"{self.row.table_name}.draw_body: {column.name=} can_edit is False", file=self.app.trace_file)
+                if value:
+                    subwin.addstr(0, 0, value, tui_base.curses.color_pair(0xf1))
+                else:
+                    subwin.addstr(0, 0, ' ', tui_base.curses.color_pair(0xf1))
             self.subwins.append(subwin)
             lineno += nlines
+
+        # FIX: delete debug code:
+        for column, subwin, lineno in zip(self.columns, self.subwins, lineno_by_col):
+            value = self.row.get(column.name)
+            #data = subwin.instr(lineno, begin_x, 100).decode('utf-8').rstrip()
+            data = subwin.instr(100).decode('utf-8').rstrip()
+            print(f"{column.name=} at {lineno=}, {begin_x=}: {value=!r}, {data=!r}", file=self.app.trace_file)
+
+        # draw command buttons
+        self.button_y = lineno + 3
+        assert self.button_y < self.lines, f"{self.button_y=}: too many lines to fit on screen, {self.lines=}"
+        button_text_width = sum(len(command) for command in self.commands) + 3 * (len(self.commands) - 1)
+        self.button_start_x = (self.cols - button_text_width) // 2
+        button_x = self.button_start_x
+        self.command_buttons_x = []
+        for command in self.commands:
+            # 0xf1 is white on red, looks like error
+            # 0xf2 is white on green, hard to read
+            # 0xf3 is white on yellow, can't read it
+            # 0xf4 is white on blue, goofy
+            # 0xf5 is white on purple, best out of first 6
+            # 0xf6 is white on turquoise, hard to read
+            self.app.stdscr.addstr(self.button_y, button_x, command, tui_base.curses.color_pair(0xf5))
+            self.command_buttons_x.append((button_x, button_x + len(command) - 1))
+            button_x += 3 + len(command)
+
 
 
 
