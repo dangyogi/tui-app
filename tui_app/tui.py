@@ -73,7 +73,7 @@ class app:
             self.draw_changed_banner()
 
     def draw_changed_banner(self):
-        self.stdscr.addstr(0, 4, "Changed", tui_base.curses.color_pair(0xf1))
+        self.stdscr.addstr(0, 6, "Changed", tui_base.curses.color_pair(0xb1))  # was 0xf1
 
     def execute(self, command):
         r'''Called for screen popup.
@@ -368,9 +368,9 @@ class row_screen(tui_base.screen):
             else:
                 print(f"{self.row.table_name}.draw_body: {column.name=} can_edit is False", file=self.app.trace_file)
                 if value:
-                    subwin.addstr(0, 0, value, tui_base.curses.color_pair(0xf1))
+                    subwin.addstr(0, 0, value, tui_base.curses.color_pair(0x01))
                 else:
-                    subwin.addstr(0, 0, ' ', tui_base.curses.color_pair(0xf1))
+                    subwin.addstr(0, 0, ' ', tui_base.curses.color_pair(0x01))
             self.subwins.append(subwin)
             lineno += nlines
 
@@ -395,7 +395,7 @@ class row_screen(tui_base.screen):
             # 0xf4 is white on blue, goofy
             # 0xf5 is white on purple, best out of first 6
             # 0xf6 is white on turquoise, hard to read
-            self.app.stdscr.addstr(self.button_y, button_x, command, tui_base.curses.color_pair(0xf5))
+            self.app.stdscr.addstr(self.button_y, button_x, command, tui_base.curses.color_pair(0x05))
             self.command_buttons_x.append((button_x, button_x + len(command) - 1))
             button_x += 3 + len(command)
 
