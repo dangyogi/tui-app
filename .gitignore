@@ -2,6 +2,7 @@
 .*.swp
 .pyhist
 .private
+color_display.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

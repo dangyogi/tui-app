@@ -30,6 +30,8 @@ It builds on three classes that you must write with the following interfaces:
         .delete()
         .update(**kws)     # given display strings as values
         .execute(app, command)  # for anything other than View/Edit/Delete
+
+See the tui_base.py module doc string for how the tui library works.
 '''
 
 import math
@@ -60,7 +62,9 @@ class app:
         self.screen = table_screen(self.tables[self.top_screen])
         with open("trace.txt", "wt") as self.trace_file:
             while self.screen is not None:
-                self.screen = self.screen.run(self)
+                next_screen = self.screen.run(self)
+                self.screen.delete()
+                self.screen = next_screen
 
     def draw_changed(self, title_x):
         self.title_x = title_x
@@ -162,13 +166,18 @@ class table_screen(tui_base.screen):
         if bstate == tui_base.curses.BUTTON3_CLICKED:
             if y >= 2:
                 # row popup
+                if self.popup is not None:
+                    self.popup.delete()
                 self.popup_y = y - 2  # selected row#
                 self.popup = tui_base.popup(self.rows[self.first_row + self.popup_y].human_key(), self,
                                             self.row_popup_commands, self.row_execute, y + 1, 4)
             else:
                 # table level popup at top of screen
-                if self.popup is not None and self.popup_y >= 2:
-                    self.popup.delete()
+                if self.popup is not None:
+                    if self.popup_y is not None:   # this is a row popup, replace it
+                        self.popup.delete()
+                    else:
+                        return None                # this is a table level popup, just keep using it...
                 self.popup_y = None
                 self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 1, 4)
         elif bstate == tui_base.curses.BUTTON4_PRESSED:
@@ -199,6 +208,12 @@ class table_screen(tui_base.screen):
             rows_left = len(self.rows) - self.first_row
             if rows_left > self.lines - 2:
                 self.scroll_up(rows_left - (self.lines - 3))
+       #elif key == 'p':
+       #    self.app.stdscr.move(4, 4)
+       #elif key == 'r':
+       #    self.app.stdscr.chgat(5, 4, 1, tui_base.curses.A_REVERSE)  # matches curses.curs_set(1) (1 = normal)
+       #elif key == 'u':
+       #    self.app.stdscr.chgat(6, 4, 1, tui_base.curses.A_UNDERLINE)  # works, not sure how useful it is...
         else:
             return key
 
@@ -287,11 +302,14 @@ class table_screen(tui_base.screen):
 
 
 class row_screen(tui_base.screen):
+    active_field = None
+
     def __init__(self, row, back=None):
         super().__init__(f"{row.table_name}: {row.human_key()}", back)
         self.row = row
         self.columns = self.row.columns
         self.commands = list(row.commands) + ['Cancel', 'Submit']
+        self.fields = ()
 
     def init(self):
         self.max_col_name_len = 0
@@ -300,43 +318,40 @@ class row_screen(tui_base.screen):
                 self.max_col_name_len = len(column.name)
         print(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}", file=self.app.trace_file)
 
+    def delete(self):
+        for field in self.fields:
+            field.delete()
+
+    def activate_field(self, field):
+        print(f"row_screen.activate_field({field.name=})", file=self.app.trace_file)
+        if self.active_field is not None and self.active_field != field:
+            self.active_field.deactivate()
+        self.active_field = field
+
     def process_mouse(self, mouse_event):
-       #if self.popup is not None:
-       #    mouse_event = self.popup.process_mouse(mouse_event)
-       #    if mouse_event is None or mouse_event in ('APP_EXIT', 'APP_ABORT') \
-       #       or isinstance(mouse_event, tui_base.screen):
-       #        return mouse_event
         _, x, y, _, bstate = mouse_event
         print(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})",
               file=self.app.trace_file)
         if bstate == tui_base.curses.BUTTON1_CLICKED:
             if y == self.button_y:
+                # check buttons
                 for i, (button_x_first, button_x_last) in enumerate(self.command_buttons_x):
                     if button_x_first <= x <= button_x_last:
                         return self.execute(self.commands[i])
-        elif bstate == tui_base.curses.BUTTON3_CLICKED:
-           #if y < 2 and self.commands:
-           #    # table level popup at top of screen
-           #    if self.popup is not None:
-           #        self.popup.delete()
-           #    self.popup_y = None
-           #    self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 1, 4)
-           pass
-        else:
-            return mouse_event
+        for field in self.fields:
+            if field.enclose(y, x):
+                return field.process_mouse(mouse_event)
+        return mouse_event
 
     def process_key(self, key):
        #if self.popup is not None:
        #    key = self.popup.process_key(key)
        #    if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
        #        return key
-        print(f"screen.process_key({key=})", file=self.app.trace_file)
-        if key == 'KEY_DOWN':
-            self.scroll_up(self.scroll_amount)
-        elif key == 'KEY_UP':
-            self.scroll_down(self.scroll_amount)
-        else:
-            return key
+        print(f"row_screen.process_key({key=}) {self.active_field=}", file=self.app.trace_file)
+        if self.active_field is not None:
+            return self.active_field.process_key(key)
+        return key
 
     def execute(self, command):
         print(f"row_screen.execute({command=})", file=self.app.trace_file)
@@ -350,35 +365,21 @@ class row_screen(tui_base.screen):
 
     def draw_body(self):
         print(f"draw_body(): {len(self.columns)=}", file=self.app.trace_file)
-        begin_x = self.max_col_name_len + 2
-        width = self.cols - begin_x
-        self.subwins = []
+        self.begin_x = self.max_col_name_len + 2
+        self.width = self.cols - self.begin_x
+        self.fields = []
         lineno = 2
         lineno_by_col = []
         for column in self.columns:
             self.app.stdscr.addstr(lineno, 0, f"{column.name}:")
             value = self.row.get(column.name)
             value_len = len(value)
-            nlines = max(1, math.ceil(value_len * 1.2 / width))
+            nlines = max(1, math.ceil(value_len * 1.2 / self.width))
             lineno_by_col.append(lineno)
-            print(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {begin_x=}", file=self.app.trace_file)
-            subwin = self.app.stdscr.subwin(nlines, width, lineno, begin_x)
-            if column.can_edit:
-                subwin.addstr(0, 0, value)
-            else:
-                print(f"{self.row.table_name}.draw_body: {column.name=} can_edit is False", file=self.app.trace_file)
-                if value:
-                    subwin.addstr(0, 0, value, tui_base.curses.color_pair(0x01))
-                else:
-                    subwin.addstr(0, 0, ' ', tui_base.curses.color_pair(0x01))
-            self.subwins.append(subwin)
+            print(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}", file=self.app.trace_file)
+            self.fields.append(field(self, value, column, nlines, lineno))
             lineno += nlines
-
-        # FIX: delete debug code:
-        for column, subwin in zip(self.columns, self.subwins):
-            value = self.row.get(column.name)
-            data = subwin.instr(0, 0).decode('utf-8').rstrip()
-            print(f"{column.name=}: {value=!r}, {data=!r}", file=self.app.trace_file)
+        self.active_field = None
 
         # draw command buttons
         self.button_y = lineno + 3
@@ -397,6 +398,274 @@ class row_screen(tui_base.screen):
             self.app.stdscr.addstr(self.button_y, button_x, command, tui_base.curses.color_pair(0x05))
             self.command_buttons_x.append((button_x, button_x + len(command) - 1))
             button_x += 3 + len(command)
+
+class field:
+    r'''These are created each time the screen.draw is called.
+
+    Therefore, they only see one screen size during their lifetime and only need to draw the text once.
+    '''
+    changed = False
+    in_select = False
+    pos_attr = tui_base.curses.A_REVERSE
+    selection_pair = 0x06  # black on yellow
+    no_edit_pair = 0x01    # black on red
+    normal_pair = 0x10     # white on black
+
+    def __init__(self, screen, text, column, nlines, lineno):
+        self.screen = screen
+        self.begin_x = screen.begin_x
+        self.width = screen.width
+        self.column = column
+        self.nlines = nlines
+        self.lineno = lineno
+        self.subwin = screen.app.stdscr.subwin(self.nlines, self.width, self.lineno, self.begin_x)
+        print(f"field({column.name}).__init__: {text=!r}, {column.name=} {column.can_edit=}, {nlines=}, {lineno=}",
+              file=screen.app.trace_file)
+        if column.can_edit:
+            self.subwin.addstr(0, 0, text)
+            self.position = 0, 0  # local (subwin) coordinates
+            self.selection_len = 0
+        else:
+            if text:
+                self.subwin.addstr(0, 0, text, tui_base.curses.color_pair(self.no_edit_pair))
+            else:
+                self.subwin.addstr(0, 0, ' ', tui_base.curses.color_pair(self.no_edit_pair))
+
+    @property
+    def name(self):
+        return self.column.name
+
+    def to_index(self, y, x):
+        r'''Converts local (subwin) coordinates to text index.
+        '''
+        ans = self.width * y + x
+        print(f"field({self.name}).to_index({y=}, {x=}) -> {ans}", file=self.screen.app.trace_file)
+        return ans
+
+    def to_pos(self, index):
+        y, x = divmod(index, self.width)
+        print(f"field({self.name}).to_pos({index=}) -> {y=}, {x=}", file=self.screen.app.trace_file)
+        if y >= self.nlines:
+            # set to lower right corner
+            y = self.nlines - 1
+            x = self.width - 1
+            print(f"field({self.name}).to_pos({index=}): OVERFLOW!, setting to lower right corner {y=}, {x=}",
+                  file=self.screen.app.trace_file)
+        return y, x
+
+    def pos_offset(self, len):
+        y, x = self.position
+        new_x = self.position[1] + len
+        y_inc, x_inc = divmod(new_x, self.width)
+        y_offset, x_offset = y + y_inc, x + x_inc
+        print(f"field({self.name}).pos_offset({len=}) -> {y_offset=}, {x_offset=}",
+              file=self.screen.app.trace_file)
+        return y_offset, x_offset
+
+    def delete(self):
+        print(f"field({self.name}).delete()", file=self.screen.app.trace_file)
+        del self.subwin
+
+    def enclose(self, y, x):
+        ans = self.column.can_edit and self.subwin.enclose(y, x)
+        print(f"field({self.name}).enclose({y=}, {x=}) -> {ans}", file=self.screen.app.trace_file)
+        return ans
+
+    def get_text(self):
+        text = self.subwin.instr(0, 0).decode('utf-8').rstrip()
+        print(f"field({self.name}).get_text() -> {text!r}", file=self.screen.app.trace_file)
+        return text
+
+    def process_mouse(self, mouse_event):
+        r'''Caller ensures self.enclose on mouse_event
+        '''
+        _, x_mouse, y_mouse, _, bstate = mouse_event
+
+        # convert to local (subwin) coordinates
+        y = y_mouse - self.lineno
+        x = x_mouse - self.begin_x
+
+        match bstate:
+            case tui_base.curses.BUTTON1_CLICKED:
+                print(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_CLICKED",
+                      file=self.screen.app.trace_file)
+                self.cancel_selection()
+                self.set_position(y, x)
+            case tui_base.curses.BUTTON1_DOUBLE_CLICKED:
+                print(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_DOUBLE_CLICKED",
+                      file=self.screen.app.trace_file)
+                middle = self.to_index(y, x)
+                text = self.get_text()
+                start = text.rfind(' ', 0, middle) + 1
+                end = text.find(' ', middle)
+                if end == -1:
+                    end = len(text)
+                while text[end] in ',.;':
+                    end -= 1
+                self.set_selection(start, end)
+            case tui_base.curses.BUTTON1_TRIPLE_CLICKED:
+                print(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_TRIPLE_CLICKED",
+                      file=self.screen.app.trace_file)
+                self.set_selection(0, len(self.get_text()))
+            case tui_base.curses.BUTTON1_PRESSED:
+                print(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_PRESSED",
+                      file=self.screen.app.trace_file)
+                self.set_position(y, x)
+                self.in_select = True
+            case tui_base.curses.REPORT_MOUSE_POSITION if self.in_select:
+                print(f"field({self.name}).process_mouse({y=}, {x=}): REPORT_MOUSE_POSITION",
+                      file=self.screen.app.trace_file)
+                self.extend_selection(y, x)
+            case tui_base.curses.BUTTON1_RELEASED:
+                print(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_RELEASED",
+                      file=self.screen.app.trace_file)
+                self.extend_selection(y, x)
+                self.in_select = False
+            case _:
+                return mouse_event
+        self.subwin.noutrefresh()
+        return None
+
+    def process_key(self, key):
+        if self.position is None:
+            print(f"field({self.name}).process_key({key=}): position not set",
+                  file=self.screen.app.trace_file)
+            return key
+        y, x = self.position
+        if len(key) == 1 and tui_base.curses.ascii.isprint(key):
+            print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, ascii.is_print",
+                  file=self.screen.app.trace_file)
+            self.delete_selection()
+            self.subwin.insch(y, x, key)
+            self.inc_position()
+        else:
+            match key:
+                case 'KEY_DELETE' | 'KEY_DC' | 'KEY_BACKSPACE' if self.selection_len:
+                    print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, "
+                          f"{self.selection_len=}, delete_selection",
+                          file=self.screen.app.trace_file)
+                    self.delete_selection()
+                case 'KEY_DELETE' | 'KEY_DC' if not self.selection_len:
+                    print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, "
+                          f"no selection, delch at cursor",
+                          file=self.screen.app.trace_file)
+                    self.subwin.delch(y, x)
+                    self.set_position(y, x)  # to turn cursor on
+                case 'KEY_BACKSPACE' if not self.selection_len:
+                    if x > 0:
+                        del_y = y
+                        del_x = x - 1
+                        print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, "
+                              f"no selection, del prev char at {del_y=}, {del_x=}",
+                              file=self.screen.app.trace_file)
+                    elif y > 0:
+                        del_y = y - 1
+                        del_x = 0
+                        print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, "
+                              f"no selection, del prev char at {del_y=}, {del_x=}",
+                              file=self.screen.app.trace_file)
+                    self.subwin.delch(del_y, del_x)
+                    self.set_position(del_y, del_x)
+                case 'KEY_UP' if y > 0:
+                    new_y = y - 1
+                    print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, "
+                          f"no selection, move to {new_y=}, {x=}",
+                          file=self.screen.app.trace_file)
+                    self.set_position(new_y, x)
+                case 'KEY_DOWN' if y + 1 < self.nlines:
+                    new_y = y + 1
+                    print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, "
+                          f"no selection, move to {new_y=}, {x=}",
+                          file=self.screen.app.trace_file)
+                    self.set_position(new_y, x)
+                case 'KEY_LEFT' if x > 0:
+                    new_x = x - 1
+                    print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, "
+                          f"no selection, move to {y=}, {new_x=}",
+                          file=self.screen.app.trace_file)
+                    self.set_position(y, new_x)
+                    self.set_position(y, new_x)
+                case 'KEY_RIGHT' if x + 1 < self.width:
+                    new_x = x + 1
+                    print(f"field({self.name}).process_key({key=}): position {y=}, {x=}, "
+                          f"no selection, move to {y=}, {new_x=}",
+                          file=self.screen.app.trace_file)
+                    self.set_position(y, new_x)
+                    self.set_position(y, new_x)
+                case _:
+                    return key
+        self.subwin.noutrefresh()
+        return None
+
+    pos_attr = tui_base.curses.A_REVERSE
+    selection_pair = 0x06  # black on yellow
+    no_edit_pair = 0x01    # black on red
+    normal_pair = 0x10     # white on black
+
+    def set_selection(self, start, end):
+        y_start, x_start = self.to_pos(start)
+        print(f"field({self.name}).set_selection({start=}, {end=}): -> {y_start=}, {x_start=}",
+              file=self.screen.app.trace_file)
+        self.set_position(y_start, x_start)
+        self.selection_len = end - start
+        self.subwin.chgat(y_start, x_start, self.selection_len,
+                          tui_base.curses.color_pair(self.selection_pair))
+
+    def extend_selection(self, y, x):
+        new_len = self.to_index(y, x) - self.to_index(*self.position)
+        print(f"field({self.name}).extend_selection({y=}, {x=}) {self.selection_len=}: -> {new_len=}",
+              file=self.screen.app.trace_file)
+        if self.selection_len > new_len:
+            # deselect from new_len to self.selection_len
+            y_start, x_start = self.pos_offset(new_len)
+            self.subwin.chgat(y_start, x_start, self.selection_len - new_len,
+                              tui_base.curses.color_pair(self.normal_pair))
+        elif new_len > self.selection_len:
+            # select from old_len to new_len
+            y_start, x_start = self.pos_offset(self.selection_len)
+            self.subwin.chgat(y_start, x_start, new_len - self.selection_len,
+                              tui_base.curses.color_pair(self.selection_pair))
+
+    def cancel_selection(self):
+        if self.selection_len:
+            y, x = self.position
+            print(f"field({self.name}).cancel_selection(): {y=}, {x=}, {self.selection_len=}",
+                  file=self.screen.app.trace_file)
+            self.subwin.chgat(y, x, self.selection_len, tui_base.curses.color_pair(self.normal_pair))
+            self.selection_len = 0
+
+    def delete_selection(self):
+        if self.selection_len:
+            y, x = self.position
+            print(f"field({self.name}).delete_selection(): {y=}, {x=}, {self.selection_len=}",
+                  file=self.screen.app.trace_file)
+            for _ in range(self.selection_len):
+                self.subwin.delch(y, x)
+            self.selection_len = 0
+
+    def set_position(self, y, x):
+        print(f"field({self.name}).set_position({y=}, {x=})", file=self.screen.app.trace_file)
+        self.cancel_selection()
+        self.position = y, x
+        self.subwin.chgat(y, x, 1, self.pos_attr)
+        self.screen.activate_field(self)
+
+    def inc_position(self):
+        print(f"field({self.name}).inc_position()", file=self.screen.app.trace_file)
+        y, x = self.to_pos(self.to_index(*self.position) + 1)
+        self.set_position(y, x)
+
+    def deactivate(self):
+        if self.selection_len:
+            print(f"field({self.name}).deactivate() {self.selection_len=}",
+                  file=self.screen.app.trace_file)
+            self.cancel_selection()
+        else:
+            y, x = self.position
+            print(f"field({self.name}).deactivate(): no selection, {y=}, {x=}",
+                  file=self.screen.app.trace_file)
+            self.subwin.chgat(y, x, 1, tui_base.curses.color_pair(self.normal_pair))
+        self.subwin.noutrefresh()
 
 
 
