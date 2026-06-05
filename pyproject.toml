@@ -4,12 +4,10 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["tui_app"]
-
 [project]
 name = "tui-app"
 version = "0.0.1"
+description = "Quick and dirty TUI app framework for tables and forms."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -20,3 +18,9 @@ dependencies = []
 repository = "https://github.com/dangyogi/tui-app.git"
 
 [project.scripts]
+
+[tool.setuptools.package-dir]
+tui_app = "tui_app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

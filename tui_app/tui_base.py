@@ -152,9 +152,16 @@ def bstate_str(bstate):
     for num in range(1, 6):
         for event in ["PRESSED", "RELEASED", "CLICKED", "DOUBLE_CLICKED", "TRIPLE_CLICKED"]:
             name = f"BUTTON{num}_{event}"
-            if bstate & getattr(curses, name):
+            value = getattr(curses, name)
+            if bstate & value:
+                other = bstate & ~value
+                if other:
+                    pre += f"{hex(other)} "
                 return pre + name
     if bstate & curses.REPORT_MOUSE_POSITION:
+        other = bstate & ~curses.REPORT_MOUSE_POSITION
+        if other:
+            pre += f"{hex(other)} "
         return pre + 'REPORT_MOUSE_POSITION'
     return f"<unknown {hex(bstate)}>"
 
