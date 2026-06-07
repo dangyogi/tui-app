@@ -315,7 +315,8 @@ class popup:
        #self.subwin.border(ch, ch, ch, ch, ch, ch, ch, ch)
        #chars = [0x20 + curses.color_pair(p) for p in range(3, 7)]
        #self.subwin.border(chars[0], chars[1], chars[2], chars[3], chars[2], chars[2], chars[3], chars[3])
-        self.subwin.box()   # does not change window coords, so addstr can overwrite the box chars, including wrapping
+        self.subwin.box()   # does not change window coords, so addstr can overwrite the box chars,
+                            # including wrapping
         self.subwin.addstr(0, 2, self.name)
        #self.subwin.chgat(0, 0, self.width, self.border_at)
         for lineno, command in enumerate(commands, 1):

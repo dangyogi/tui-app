@@ -18,7 +18,7 @@ def wrap_1_line_right():
 
 @pytest.fixture
 def wrap_3_lines():
-    return wrapper("wrap_3_lines", nlines=3, ncols=10, alignment="left")
+    return wrapper("wrap_3_lines", nlines=3, ncols=20, alignment="left")
 
 
 @pytest.mark.parametrize("end, ans", [
@@ -132,12 +132,26 @@ def test_short_text_blank_padding(wrapper, result):
 
 
 def test_multi_line(wrap_3_lines):
+           #         1         2         3         4         5         6         7         8
            #12345678901234567890123456789012345678901234567890123456789012345678901234567890
     text = "but are created automatically when test functions request them as parameters."
 
     lines = list(wrap_3_lines.wrap(text))
     assert len(lines) == 3
-                            #1234567890
-    assert lines[0] == ( 0, "but are   ")
-    assert lines[1] == ( 8, "created   ")
-    assert lines[2] == (16, "auto [...]")
+                            #12345678901234567890
+    assert lines[0] == ( 0, "but are created     ")
+    assert lines[1] == (16, "automatically when  ")
+    assert lines[2] == (35, "test functions [...]")
+
+
+def test_multi_line2(wrap_3_lines):
+           #         1         2         3         4         5         6         7         8
+           #12345678901234567890123456789012345678901234567890123456789012345678901234567890
+    text = "but are created automatically when test functions request them as parameters."
+
+    lines = list(wrap_3_lines.wrap(text, scroll=29))
+    assert len(lines) == 3
+                            #12345678901234567890
+    assert lines[0] == (29, "[...] test functions")
+    assert lines[1] == (50, "request them as     ")
+    assert lines[2] == (66, "parameters.         ")

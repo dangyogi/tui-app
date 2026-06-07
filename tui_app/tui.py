@@ -11,7 +11,9 @@ It builds on three classes that you must write with the following interfaces:
         .columns
         .screen_popup_commands   # list of strings, tui will add Back and Abort/Exit to the end of these.
         .row_popup_commands      # list of strings, or None for row popup in table screen
-        .get_rows(**select)      # returns a complete list of row objects.
+        .get_rows(app, **select) # returns a list of selected row objects.
+                                 # select keys are column_name (__eq assumed), or column_name__<lt|le|eq|ne|ge|gt>
+                                 # results of select keys are and-ed.
                                  # This library does not support paging to the data.
         .execute(app, command)   # for anything other than table_names or Abort/Exit
 
@@ -107,10 +109,11 @@ class app:
 class table_screen(tui_base.screen):
     scroll_amount = 3
 
-    def __init__(self, table, back=None):
+    def __init__(self, table, back=None, **select):
         super().__init__(table.name, back)
         self.table = table
         self.first_row = 0
+        self.select = select
 
     @property
     def commands(self):
@@ -128,7 +131,7 @@ class table_screen(tui_base.screen):
         r'''Run each time run is called, but _not_ each time the screen is resized.
         '''
         print(f"table_screen.init({self.table.name=})", file=self.app.trace_file)
-        self.rows = self.table.get_rows(self.app)
+        self.rows = self.table.get_rows(self.app, **self.select)
         self.row_popup_commands = self.table.row_popup_commands
         self.columns = self.table.columns
         self.max_lens = []

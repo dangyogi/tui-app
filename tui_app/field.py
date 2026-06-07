@@ -11,15 +11,16 @@ import curses
 
 
 class wrapper:
+    left_placeholder = '[...] '
+    right_placeholder = ' [...]'
     max_waste = 10
 
-    def __init__(self, name, nlines, ncols, alignment, left_placeholder='[...] ', right_placeholder=' [...]'):
+    def __init__(self, name, nlines, ncols, app=None, alignment="left"):
         self.name = name
         self.nlines = nlines
         self.ncols = ncols
         self.alignment = alignment
-        self.left_placeholder = left_placeholder
-        self.right_placeholder = right_placeholder
+        self.app = app     # only used (shared) by field classes below
 
     def wrap(self, text, scroll=0):
         r'''Generates (index, line) pairs.
@@ -103,97 +104,76 @@ class wrapper:
 
 
 class read_only_field:
-    left_placeholder = '[...] '
-    right_placeholder = ' [...]'
     attr_pair = 0x01    # black on red
 
-    def __init__(self, name, stdscr, text, nlines, ncols, begin_y, begin_x, alignment="left", trace_file=None):
-        self.name = name
-        self.stdscr = stdscr
-        self.nlines = nlines
-        self.ncols = ncols
-        self.nchars = nlines * ncols
+    def __init__(self, text, wrapper, begin_y, begin_x, paint=True):
+        self.text = text
+        self.wrapper = wrapper
         self.begin_y = begin_y
         self.begin_x = begin_x
-        self.alignment = alignment
-       #self.textwrapper = TextWrapper(width=ncols, max_lines=self.nlines, placeholder=self.right_placeholder,
         self.scroll = 0
-        self.trace_file = trace_file
-        self.trace(f"field({self.name}).__init__: {text=!r}, {nlines=}, {ncols=}, {begin_y=}, {begin_x=}")
-        self.text = ''
-        self.paint(text)
+        self.trace(f"field({self.name}).__init__: {text=!r}, {begin_y=}, {begin_x=}")
+        if paint:
+            self.paint()
+
+    @property
+    def name(self):
+        return self.wrapper.name
 
     def enclose(self, y, x):
         return False
 
     def trace(self, *objects, sep=' ', end='\n', flush=False):
-        if self.trace_file is not None:
-            print(*objects, sep=sep, end=end, file=self.trace_file, flush=flush)
+        if self.wrapper.app is not None and self.wrapper.app.trace_file is not None:
+            print(*objects, sep=sep, end=end, file=self.wrapper.app.trace_file, flush=flush)
 
-    def calc_scroll(self, text):
-        r'''Returns a new scroll value for text.
-        '''
-        text = text.rstrip()
-        text_middle = len(text) // 2
-        field_middle = self.nchars // 2
-        if text_middle <= field_middle:
-            return 0
-        scroll = text_middle + len(self.left_placeholder) - field_middle
-        if text[scroll].isspace():
-            while text[scroll + 1].isppace():
-                scroll += 1
-            return scroll + len(self.left_placeholder)
-        for offset in range(1, scroll - 15):
-            if text[scroll + offset].isspace():
-                scroll += offset
-                while text[scroll + 1].isppace():
-                    scroll += 1
-                return scroll + len(self.left_placeholder)
-            elif text[scroll - offset].isspace():
-                return scroll - offset + len(self.left_placeholder)
-        return scroll - offset + len(self.left_placeholder)
-
-    def wrap(self, text):
-        self.scroll = self.calc_scroll(text)
-
-        if self.scroll:
-            lines = self.textwrapper.wrap(self.left_placeholder + text[self.scroll:])
-        else:
-            lines = self.textwrapper.wrap(text)
-        return lines
-
-    def paint(self, text):
-        r'''Completely replaces everything visible on the screen.
+    def paint(self):
+        r'''Completely replaces everything visible on the screen (ie, curses attrs).
 
         Recalculates self.scroll position.
         '''
-        self.trace(f"field({self.name}).paint({text=!r})")
-        lines = self.wrap()
-        if self.scroll:
-            offsets = [self.scroll - len(self.left_placeholder)]
-        else:
-            offsets = [0]
-        for y, line in zip_longest(range(0, self.nlines), lines, fillvalue=''):
-            if line:
-                offsets[-1] = self.text.index(line, offsets[-1])
-            self.addstr(y, 0, line + (' ' * (self.ncols - len(line))))
-            self.trace(f"field({self.name}).paint: {line=!r}, {offsets[-1]=}")
-            offsets.append(offsets[-1] + len(line))
-        self.text = text
+        self.trace(f"field({self.name}).paint({self.text=!r})")
+        self.starts = []
+        stdscr = self.wrapper.app.stdscr
+        attr = curses.color_pair(self.attr_pair)
+        for y, (start, line) in zip(range(self.begin_y, self.begin_y + self.wrapper.nlines),
+                                    self.wrapper.wrap(self.text, self.scroll)):
+            self.starts.append(start)
+            stdscr.addstr(y, self.begin_x, line, attr)
         self.set_attrs()
 
     def set_attrs(self, reset=False):
         pass
 
-    def addstr(self, y, x, str, attr=None):
-        if attr is None:
-            attr = curses.color_pair(self.attr_pair)
-        self.stdscr.addstr(y + self.begin_y, x + self.begin_x, str, attr)
+    def chgat(self, start, end, attr):
+        r'''This takes indexes into self.text.
+        '''
+        stdscr = self.wrapper.app.stdscr
+        for y, x, num in self.gen_locations(start, end):
+            stdscr.chgat(y, x, num, attr)
 
-    def chgat(self, y, x, nchars, attr=None):
-        if attr is None:
-            attr = curses.color_pair(self.attr_pair)
-        self.stdscr.chgat(y + self.begin_y, x + self.begin_x, nchars, attr)
+    def gen_locations(self, start, end):
+        r'''This takes indexes into self.text and generates all y, x, num values that are visible.
+        '''
+        def gen_line(lineno):
+            this_start = self.starts[lineno]
+            if lineno + 1 < self.wrapper.nlines:
+                next_start = min(self.starts[lineno + 1], this_start + self.wrapper.ncols)
+            else:
+                next_start = min(this_start + self.wrapper.ncols - len(self.wrapper.right_placeholder),
+                                 len(self.text))
+            print(f"{self.name}.gen_locations.gen_line({start=}, {end=}, {lineno=}): {this_start=}, {next_start=}")
+            if this_start < start + end and next_start > start:
+                skip = 0 if lineno or not self.scroll else len(self.wrapper.left_placeholder)
+                start_x = max(skip, start - this_start)
+                end_x = min(end, next_start) - this_start
+                print(f"{self.name}.gen_locations.gen_line: {skip=}, {start_x=}, {end_x=}")
+                if end_x > skip and end_x > start_x:
+                    yield self.begin_y + lineno, self.begin_x + start_x, end_x - start_x
+        print(f"{self.name}.gen_locations({start=}, {end=})")
+        for lineno in range(self.wrapper.nlines):
+            print(f"{self.name}.gen_locations: calling gen_line({lineno=})")
+            yield from gen_line(lineno)
 
 
 class editable_field(read_only_field):
@@ -216,21 +196,21 @@ class editable_field(read_only_field):
         self.paint(self.text[: offset] + insch + self.text[offset + nchars:])
 
     def enclose(self, y, x):
-        ans = self.begin_y <= y < self.begin_y + self.nlines and \
-              self.begin_x <= x < self.begin_x + self.ncols
+        ans = self.begin_y <= y < self.begin_y + self.wrapper.nlines and \
+              self.begin_x <= x < self.begin_x + self.wrapper.ncols
         self.trace(f"field({self.name}).enclose({y=}, {x=}) -> {ans}")
         return ans
 
     def do_chgat(self, start, nchars, attr=None):
         self.trace(f"field({self.name}).do_chgat({start=}, {nchars=}")
-        for lineno in range(self.nlines):
+        for lineno in range(self.wrapper.nlines):
             offset = offsets[lineno]
             if offset <= start:
                 # starts at or after beg of line
                 x = start - offset
                 if start < offsets[lineno + 1] <= start + nchars:
                     # spills over to next line
-                    self.chgat(lineno, x, self.ncols - x, attr)
+                    self.chgat(lineno, x, self.wrapper.ncols - x, attr)
                 else:
                     # does not spill over to next line
                     self.chgat(lineno, x, nchars, attr)
@@ -271,11 +251,12 @@ class editable_field(read_only_field):
     def to_pos(self, index):
         y, x = divmod(index, self.width)
         self.trace(f"field({self.name}).to_pos({index=}) -> {y=}, {x=}")
-        if y >= self.nlines:
+        if y >= self.wrapper.nlines:
             # set to lower right corner
-            y = self.nlines - 1
+            y = self.wrapper.nlines - 1
             x = self.width - 1
-            self.trace(f"field({self.name}).to_pos({index=}): OVERFLOW!, setting to lower right corner {y=}, {x=}")
+            self.trace(f"field({self.name}).to_pos({index=}): "
+                       f"OVERFLOW!, setting to lower right corner {y=}, {x=}")
         return y, x
 
     def get_text(self):
@@ -310,15 +291,18 @@ class editable_field(read_only_field):
                 self.trace(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_TRIPLE_CLICKED")
                 self.set_selection(0, len(self.get_text()))
             case tui_base.curses.BUTTON1_PRESSED:
-                self.trace(f"field({self.name}).process_mouse({y=}, {x=}): {self.in_select=} BUTTON1_PRESSED")
+                self.trace(f"field({self.name}).process_mouse({y=}, {x=}): "
+                           f"{self.in_select=} BUTTON1_PRESSED")
                 self.set_attr(reset=True)
                 self.set_position(index)
                 self.in_select = True
             case tui_base.curses.REPORT_MOUSE_POSITION if self.in_select:
-                self.trace(f"field({self.name}).process_mouse({y=}, {x=}): {self.in_select=} REPORT_MOUSE_POSITION")
+                self.trace(f"field({self.name}).process_mouse({y=}, {x=}): "
+                           f"{self.in_select=} REPORT_MOUSE_POSITION")
                 self.extend_selection(index)
             case tui_base.curses.BUTTON1_RELEASED if self.in_select:
-                self.trace(f"field({self.name}).process_mouse({y=}, {x=}): {self.in_select=} BUTTON1_RELEASED")
+                self.trace(f"field({self.name}).process_mouse({y=}, {x=}): "
+                           f"{self.in_select=} BUTTON1_RELEASED")
                 self.extend_selection(index)
                 self.in_select = False
             case _:
@@ -355,7 +339,7 @@ class editable_field(read_only_field):
                     self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
                                f"no selection, move to {new_y=}, {x=}")
                     self.set_position(new_y, x)
-                case 'KEY_DOWN' if y + 1 < self.nlines:
+                case 'KEY_DOWN' if y + 1 < self.wrapper.nlines:
                     new_y = y + 1
                     self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
                                f"no selection, move to {new_y=}, {x=}")
