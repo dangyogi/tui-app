@@ -131,11 +131,13 @@ def test_short_text_blank_padding(wrapper, result):
     assert rendered_line == result
 
 
-def test_multi_line(wrap_3_lines):
+@pytest.fixture
+def text():
            #         1         2         3         4         5         6         7         8
            #12345678901234567890123456789012345678901234567890123456789012345678901234567890
-    text = "but are created automatically when test functions request them as parameters."
+    return "but are created automatically when test functions request them as parameters."
 
+def test_multi_line(wrap_3_lines, text):
     lines = list(wrap_3_lines.wrap(text))
     assert len(lines) == 3
                             #12345678901234567890
@@ -144,14 +146,19 @@ def test_multi_line(wrap_3_lines):
     assert lines[2] == (35, "test functions [...]")
 
 
-def test_multi_line2(wrap_3_lines):
-           #         1         2         3         4         5         6         7         8
-           #12345678901234567890123456789012345678901234567890123456789012345678901234567890
-    text = "but are created automatically when test functions request them as parameters."
-
+def test_multi_line2(wrap_3_lines, text):
     lines = list(wrap_3_lines.wrap(text, scroll=29))
     assert len(lines) == 3
                             #12345678901234567890
     assert lines[0] == (29, "[...] test functions")
     assert lines[1] == (50, "request them as     ")
     assert lines[2] == (66, "parameters.         ")
+
+
+def test_multi_line3(wrap_3_lines, text):
+    lines = list(wrap_3_lines.wrap(text, scroll=52))
+    assert len(lines) == 3
+                              #12345678901234567890
+    assert lines[0] == (52,   "[...] them as       ")
+    assert lines[1] == (66,   "parameters.         ")
+    assert lines[2] == (None, "                    ")

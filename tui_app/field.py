@@ -120,6 +120,14 @@ class read_only_field:
     def name(self):
         return self.wrapper.name
 
+    @property
+    def nlines(self):
+        return self.wrapper.nlines
+
+    @property
+    def ncols(self):
+        return self.wrapper.ncols
+
     def enclose(self, y, x):
         return False
 
@@ -136,7 +144,7 @@ class read_only_field:
         self.starts = []
         stdscr = self.wrapper.app.stdscr
         attr = curses.color_pair(self.attr_pair)
-        for y, (start, line) in zip(range(self.begin_y, self.begin_y + self.wrapper.nlines),
+        for y, (start, line) in zip(range(self.begin_y, self.begin_y + self.nlines),
                                     self.wrapper.wrap(self.text, self.scroll)):
             self.starts.append(start)
             stdscr.addstr(y, self.begin_x, line, attr)
@@ -145,11 +153,11 @@ class read_only_field:
     def set_attrs(self, reset=False):
         pass
 
-    def chgat(self, start, end, attr):
+    def chgat(self, start, length, attr):
         r'''This takes indexes into self.text.
         '''
         stdscr = self.wrapper.app.stdscr
-        for y, x, num in self.gen_locations(start, end):
+        for y, x, num in self.gen_locations(start, start + length):
             stdscr.chgat(y, x, num, attr)
 
     def gen_locations(self, start, end):
@@ -157,21 +165,24 @@ class read_only_field:
         '''
         def gen_line(lineno):
             this_start = self.starts[lineno]
-            if lineno + 1 < self.wrapper.nlines:
-                next_start = min(self.starts[lineno + 1], this_start + self.wrapper.ncols)
-            else:
-                next_start = min(this_start + self.wrapper.ncols - len(self.wrapper.right_placeholder),
-                                 len(self.text))
-            print(f"{self.name}.gen_locations.gen_line({start=}, {end=}, {lineno=}): {this_start=}, {next_start=}")
-            if this_start < start + end and next_start > start:
-                skip = 0 if lineno or not self.scroll else len(self.wrapper.left_placeholder)
-                start_x = max(skip, start - this_start)
-                end_x = min(end, next_start) - this_start
-                print(f"{self.name}.gen_locations.gen_line: {skip=}, {start_x=}, {end_x=}")
-                if end_x > skip and end_x > start_x:
-                    yield self.begin_y + lineno, self.begin_x + start_x, end_x - start_x
+            if this_start is not None:
+                if lineno + 1 < self.nlines and self.starts[lineno + 1] is not None:
+                    next_start = min(self.starts[lineno + 1], this_start + self.ncols)
+                elif len(self.text) > this_start + self.ncols:
+                    next_start = this_start + self.ncols - len(self.wrapper.right_placeholder)
+                else:
+                    next_start = len(self.text)
+                print(f"{self.name}.gen_locations.gen_line({start=}, {end=}, {lineno=}): {this_start=}, {next_start=}")
+                if this_start < start + end and next_start > start:
+                    skip = 0 if lineno or not self.scroll else len(self.wrapper.left_placeholder)
+                    start_x = max(skip, start - this_start)
+                    end_x = min(end, next_start) - this_start
+                    print(f"{self.name}.gen_locations.gen_line: {skip=}, {start_x=}, {end_x=}")
+                    if end_x > skip and end_x > start_x:
+                        yield self.begin_y + lineno, self.begin_x + start_x, end_x - start_x
+
         print(f"{self.name}.gen_locations({start=}, {end=})")
-        for lineno in range(self.wrapper.nlines):
+        for lineno in range(self.nlines):
             print(f"{self.name}.gen_locations: calling gen_line({lineno=})")
             yield from gen_line(lineno)
 
@@ -186,6 +197,68 @@ class editable_field(read_only_field):
     changed = False
     in_select = False
 
+    def get_text(self):
+        self.trace(f"field({self.name}).get_text() -> {self.text!r}")
+        return self.text
+
+    def enclose(self, y, x):
+        ans = self.begin_y <= y < self.begin_y + self.nlines and \
+              self.begin_x <= x < self.begin_x + self.ncols
+        self.trace(f"field({self.name}).enclose({y=}, {x=}) -> {ans}")
+        return ans
+
+    def to_index(self, y, x):
+        r'''Converts local (subwin) coordinates to text index.
+        '''
+        assert y >= self.begin_y and y < self.begin_y + self.nlines, \
+               f"editable_field({self.name}).to_index({y=}, {x=}): y out of bounds {self.begin_y=}, {self.nlines=}"
+        assert x >= self.begin_x and x < self.begin_x + self.ncols, \
+               f"editable_field({self.name}).to_index({y=}, {x=}): x out of bounds {self.begin_x=}, {self.ncols=}"
+        y -= self.begin_y
+        x -= self.begin_x
+        start_x = self.starts[y]
+        if start_x is None:
+            ans = len(self.text) - 1
+        else:
+            skip = 0
+            if y == 0 and self.scroll:
+                skip = len(self.wrapper.left_placeholder)
+                if x <= skip:
+                    ans = start_x + skip
+                    self.trace(f"field({self.name}).to_index({y=}, {x=}) -> {ans}")
+                    return ans
+            if y + 1 < self.nlines:
+                if self.starts[y + 1] is not None:
+                    end_x = min(self.starts[y + 1], start_x + self.ncols)
+                else:
+                    end_x = min(start_x + self.ncols, len(self.text))
+            elif len(self.text) > start_x + self.ncols:
+                end_x = start_x + self.ncols - len(self.wrapper.right_placeholder)
+            else:
+                end_x = len(self.text)
+            ans = start_x + x
+            if ans >= end_x:
+                ans = end_x - 1
+        self.trace(f"field({self.name}).to_index({y=}, {x=}) -> {ans}")
+        return ans
+
+    def set_attrs(self, reset=False):
+        if self.selection_len == 0:
+            if reset:
+                attr = curses.color_pair(self.attr_pair)
+            else:
+                attr = self.pos_attr
+            self.chgat(self.position, 1, attr)
+        else:
+            if reset:
+                attr = curses.color_pair(self.attr_pair)
+            else:
+                attr = curses.color_pair(self.selection_pair)
+            if self.selection_len > 0:
+                self.chgat(self.position, self.selection_len, attr)
+            else:
+                self.chgat(self.position + self.selection_len, abs(self.selection_len), attr)
+
     def insert(self, text, offset=0):
         self.paint(self.text[: offset] + text + self.text[offset:])
 
@@ -194,74 +267,6 @@ class editable_field(read_only_field):
 
     def delete(self, nchars, offset=0, insch=''):
         self.paint(self.text[: offset] + insch + self.text[offset + nchars:])
-
-    def enclose(self, y, x):
-        ans = self.begin_y <= y < self.begin_y + self.wrapper.nlines and \
-              self.begin_x <= x < self.begin_x + self.wrapper.ncols
-        self.trace(f"field({self.name}).enclose({y=}, {x=}) -> {ans}")
-        return ans
-
-    def do_chgat(self, start, nchars, attr=None):
-        self.trace(f"field({self.name}).do_chgat({start=}, {nchars=}")
-        for lineno in range(self.wrapper.nlines):
-            offset = offsets[lineno]
-            if offset <= start:
-                # starts at or after beg of line
-                x = start - offset
-                if start < offsets[lineno + 1] <= start + nchars:
-                    # spills over to next line
-                    self.chgat(lineno, x, self.wrapper.ncols - x, attr)
-                else:
-                    # does not spill over to next line
-                    self.chgat(lineno, x, nchars, attr)
-                    break
-            else:
-                if start + nchars > offset:
-                    # starts before beg of line, continues to this line
-                    self.chgat(lineno, 0, nchars - (offset - start), attr)
-                else:
-                    break
-        else:
-            self.trace(f"field({self.name}).do_chgat fell off end of lines")
-
-    def set_attrs(self, reset=False):
-        if self.selection_len == 0:
-            if reset:
-                attr = curses.color_pair(self.attr_pair)
-            else:
-                attr = self.pos_attr
-            self.do_chgat(self.position, 1, attr)
-        else:
-            if reset:
-                attr = curses.color_pair(self.attr_pair)
-            else:
-                attr = curses.color_pair(self.selection_pair)
-            if self.selection_len > 0:
-                self.do_chgat(self.position, self.selection_len, attr)
-            else:
-                self.do_chgat(self.position + self.selection_len, abs(self.selection_len), attr)
-
-    def to_index(self, y, x):
-        r'''Converts local (subwin) coordinates to text index.
-        '''
-        ans = self.width * y + x
-        self.trace(f"field({self.name}).to_index({y=}, {x=}) -> {ans}")
-        return ans
-
-    def to_pos(self, index):
-        y, x = divmod(index, self.width)
-        self.trace(f"field({self.name}).to_pos({index=}) -> {y=}, {x=}")
-        if y >= self.wrapper.nlines:
-            # set to lower right corner
-            y = self.wrapper.nlines - 1
-            x = self.width - 1
-            self.trace(f"field({self.name}).to_pos({index=}): "
-                       f"OVERFLOW!, setting to lower right corner {y=}, {x=}")
-        return y, x
-
-    def get_text(self):
-        self.trace(f"field({self.name}).get_text() -> {self.text!r}")
-        return self.text
 
     def process_mouse(self, mouse_event):
         r'''Caller ensures self.enclose on mouse_event
@@ -339,7 +344,7 @@ class editable_field(read_only_field):
                     self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
                                f"no selection, move to {new_y=}, {x=}")
                     self.set_position(new_y, x)
-                case 'KEY_DOWN' if y + 1 < self.wrapper.nlines:
+                case 'KEY_DOWN' if y + 1 < self.nlines:
                     new_y = y + 1
                     self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
                                f"no selection, move to {new_y=}, {x=}")
@@ -437,8 +442,3 @@ class editable_field(read_only_field):
         self.set_attr(reset=True)
         self.selection_len = 0
 
-
-
-
-if __name__ == "__main__":
-   pass 
