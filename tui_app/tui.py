@@ -39,6 +39,7 @@ See the tui_base.py module doc string for how the tui library works.
 import math
 
 from . import tui_base
+from .field import wrapper, read_only_field, editable_field
 
 
 def start(tables, top_screen=None):
@@ -49,6 +50,7 @@ class app:
     r'''Created and run by `start` fn.
     '''
     screen = None
+    trace_file = None
 
     def __init__(self, tables, top_screen=None):
         self.tables = tables
@@ -57,6 +59,10 @@ class app:
         else:
             self.top_screen = top_screen
         self.changed = False
+
+    def trace(self, *objects, sep=' ', end='\n', flush=False):
+        if self.trace_file is not None:
+            print(*objects, sep=sep, end=end, file=self.trace_file, flush=flush)
 
     def run(self, stdscr):   # called by curses.wrapper in start fn
         self.stdscr = stdscr
@@ -86,23 +92,23 @@ class app:
 
         Calls self.screen.table.execute if it does not recognize the command.
         '''
-        print(f"app.execute({command=})", file=self.trace_file)
+        self.trace(f"app.execute({command=})")
         if command in self.tables:
-            print("command is table, returning table_screen", file=self.trace_file)
+            self.trace("command is table, returning table_screen")
             return table_screen(self.tables[command], self.screen)
         if command == 'Back':
             return self.screen.back
         if command == 'Exit':
-            print(f"command is {command!r}, returning 'APP_EXIT'", file=self.trace_file)
+            self.trace(f"command is {command!r}, returning 'APP_EXIT'")
             return 'APP_EXIT'
         if command == 'Abort':
-            print(f"command is {command!r}, returning 'APP_ABORT'", file=self.trace_file)
+            self.trace(f"command is {command!r}, returning 'APP_ABORT'")
             return 'APP_ABORT'
         if command == 'Change':
             # for testing
             self.set_changed()
             return None
-        print(f"app.execute({command=}): forwarding to screen", file=self.trace_file)
+        self.trace(f"app.execute({command=}): forwarding to screen")
         return self.screen.table.execute(self, command)
 
 
@@ -130,12 +136,13 @@ class table_screen(tui_base.screen):
     def init(self):
         r'''Run each time run is called, but _not_ each time the screen is resized.
         '''
-        print(f"table_screen.init({self.table.name=})", file=self.app.trace_file)
+        self.app.trace(f"table_screen.init({self.table.name=})")
         self.rows = self.table.get_rows(self.app, **self.select)
         self.row_popup_commands = self.table.row_popup_commands
         self.columns = self.table.columns
         self.max_lens = []
         self.column_names = []
+        self.wrappers = []
         for column in self.columns:
             if column.min_width is not None:
                 max_len = column.min_width
@@ -153,10 +160,11 @@ class table_screen(tui_base.screen):
             if len(name) > max_len:
                 max_len = len(name)
             self.max_lens.append(max_len)
+            self.wrappers.append(wrapper(name, 1, max_len, self.app, column.alignment))
         self.width = sum(self.max_lens) + len(self.max_lens) - 1
-        print(f"table_screen.init({self.table.name=}, {self.width=})", file=self.app.trace_file)
+        self.app.trace(f"table_screen.init({self.table.name=}, {self.width=})")
         for col, max_len in zip(self.column_names, self.max_lens):
-            print(f"{col=}, {max_len=}", file=self.app.trace_file)
+            self.app.trace(f"{col=}, {max_len=}")
 
     def process_mouse(self, mouse_event):
         if self.popup is not None:
@@ -165,7 +173,7 @@ class table_screen(tui_base.screen):
                or isinstance(mouse_event, tui_base.screen):
                 return mouse_event
         _, x, y, _, bstate = mouse_event
-        print(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})", file=self.app.trace_file)
+        self.app.trace(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if bstate == tui_base.curses.BUTTON3_CLICKED:
             if y >= 2:
                 # row popup
@@ -195,7 +203,7 @@ class table_screen(tui_base.screen):
             key = self.popup.process_key(key)
             if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
                 return key
-        print(f"screen.process_key({key=})", file=self.app.trace_file)
+        self.app.trace(f"screen.process_key({key=})")
         if key == 'KEY_DOWN':
             self.scroll_up(self.scroll_amount)
         elif key == 'KEY_UP':
@@ -225,7 +233,7 @@ class table_screen(tui_base.screen):
 
         Calls self.screen.table.execute if it does not recognize the command.
         '''
-        print(f"row_execute({self.popup_y=}, {command=})", file=self.app.trace_file)
+        self.app.trace(f"row_execute({self.popup_y=}, {command=})")
         row = self.rows[self.first_row + self.popup_y]
         match command:
             case "View/Edit":
@@ -236,26 +244,25 @@ class table_screen(tui_base.screen):
                 return row.execute(self.app, command)
 
     def scroll_up(self, nlines):
-        print(f"scroll_up({nlines})", file=self.app.trace_file)
+        self.app.trace(f"scroll_up({nlines})")
         if len(self.rows) - self.first_row - nlines < self.lines - 3:
             first_row = len(self.rows) - (self.lines - 3)
             nlines = first_row - self.first_row
-            print(f"adjusted {nlines=}", file=self.app.trace_file)
+            self.app.trace(f"adjusted {nlines=}")
         if nlines > 0:
             self.first_row += nlines
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
-                print(f"scroll_up: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})",
-                      file=self.app.trace_file)
+                self.app.trace(f"scroll_up: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
                 self.app.stdscr.insdelln(-(self.lines - 2))
                 self.draw_rows(self.first_row)
             else:
-                print(f"scroll_up: insdelln(-{nlines=})", file=self.app.trace_file)
+                self.app.trace(f"scroll_up: insdelln(-{nlines=})")
                 self.app.stdscr.insdelln(-nlines)
                 self.draw_rows(self.first_row + (self.lines - 2) - nlines, self.lines - nlines)
 
     def scroll_down(self, nlines):
-        print(f"scroll_down({nlines})", file=self.app.trace_file)
+        self.app.trace(f"scroll_down({nlines})")
         if self.first_row - nlines < 0:
             first_row = 0
             nlines = self.first_row
@@ -264,8 +271,7 @@ class table_screen(tui_base.screen):
             self.first_row -= nlines
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
-                print(f"scroll_down: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})",
-                      file=self.app.trace_file)
+                self.app.trace(f"scroll_down: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
                 self.app.stdscr.insdelln(-(self.lines - 2))
                 self.draw_rows(self.first_row)
             else:
@@ -273,7 +279,7 @@ class table_screen(tui_base.screen):
                 self.draw_rows(self.first_row, 2, nlines)
 
     def draw_body(self):
-        print(f"draw_body(): {len(self.rows)=}", file=self.app.trace_file)
+        self.app.trace(f"draw_body(): {len(self.rows)=}")
         values = [f"{name:<{max_len}}" if column.alignment == 'left' else f"{name:>{max_len}}"
                   for column, name, max_len
                    in zip(self.columns, self.column_names, self.max_lens)]
@@ -290,18 +296,19 @@ class table_screen(tui_base.screen):
     def draw_rows(self, first_row=0, first_line=2, nlines=None):
         if nlines is None:
             nlines = self.lines - first_line
-        print(f"draw_rows({first_row=}, {first_line=}, {nlines=})", file=self.app.trace_file)
+        self.app.trace(f"draw_rows({first_row=}, {first_line=}, {nlines=})")
         for lineno, row in enumerate(self.rows[first_row:], first_line):
             if lineno - first_line == nlines:
                 break
-            columns = []
-            for column, max_len in zip(self.columns, self.max_lens):
-                value = row.get(column.name)
-                if len(value) > max_len:
-                    value = value[: max_len - 1] + '>'
-                columns.append(f"{value:<{max_len}}" if column.alignment == 'left' else f"{value:>{max_len}}")
-           #print(f"draw_rows: addstr({lineno=}, ...)", file=self.app.trace_file)
-            self.app.stdscr.addstr(lineno, 0, ' '.join(columns))
+            fields = []
+            begin_x = 0
+            for column, max_len, wrapper in zip(self.columns, self.max_lens, self.wrappers):
+                if column.can_edit:
+                    f_type = editable_field
+                else:
+                    f_type = read_only_field
+                fields.append(f_type(row.get(column.name), wrapper, lineno, begin_x))
+                begin_x += max_len + 1
 
 
 class row_screen(tui_base.screen):
@@ -319,22 +326,21 @@ class row_screen(tui_base.screen):
         for column in self.columns:
             if len(column.name) > self.max_col_name_len:
                 self.max_col_name_len = len(column.name)
-        print(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}", file=self.app.trace_file)
+        self.app.trace(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
 
     def delete(self):
         for field in self.fields:
             field.delete()
 
     def activate_field(self, field):
-        print(f"row_screen.activate_field({field.name=})", file=self.app.trace_file)
+        self.app.trace(f"row_screen.activate_field({field.name=})")
         if self.active_field is not None and self.active_field != field:
             self.active_field.deactivate()
         self.active_field = field
 
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
-        print(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})",
-              file=self.app.trace_file)
+        self.app.trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if bstate == tui_base.curses.BUTTON1_CLICKED:
             if y == self.button_y:
                 # check buttons
@@ -351,23 +357,23 @@ class row_screen(tui_base.screen):
        #    key = self.popup.process_key(key)
        #    if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
        #        return key
-        print(f"row_screen.process_key({key=}) {self.active_field=}", file=self.app.trace_file)
+        self.app.trace(f"row_screen.process_key({key=}) {self.active_field=}")
         if self.active_field is not None:
             return self.active_field.process_key(key)
         return key
 
     def execute(self, command):
-        print(f"row_screen.execute({command=})", file=self.app.trace_file)
+        self.app.trace(f"row_screen.execute({command=})")
         match command:
             case 'Cancel':
-                print(f"Cancel command going back to screen {self.back.title}", file=self.app.trace_file)
+                self.app.trace(f"Cancel command going back to screen {self.back.title}")
                 return self.back
             case 'Submit':
-                print("Submit command not implemented", file=self.app.trace_file)
+                self.app.trace("Submit command not implemented")
                 return self.back
 
     def draw_body(self):
-        print(f"draw_body(): {len(self.columns)=}", file=self.app.trace_file)
+        self.app.trace(f"draw_body(): {len(self.columns)=}")
         self.begin_x = self.max_col_name_len + 2
         self.width = self.cols - self.begin_x
         self.fields = []
@@ -379,7 +385,7 @@ class row_screen(tui_base.screen):
             value_len = len(value)
             nlines = max(1, math.ceil(value_len * 1.2 / self.width))
             lineno_by_col.append(lineno)
-            print(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}", file=self.app.trace_file)
+            self.app.trace(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}")
             self.fields.append(field(self, value, column, nlines, lineno))
             lineno += nlines
         self.active_field = None

@@ -242,9 +242,10 @@ class screen:
         '''
         self.lines = curses.LINES
         self.cols = curses.COLS
-        print(f"draw(): {self.lines=}, {self.cols=}", file=self.app.trace_file)
-        if self.width is None:
-            self.width = self.cols
+        self.app.trace(f"draw(): {self.lines=}, {self.cols=}")
+       #if self.width is None:
+       #    self.width = self.cols
+        self.width = self.cols
         self.delete()
         self.app.stdscr.erase()
         title_x = (self.width - len(self.title)) // 2   # center title
@@ -272,7 +273,7 @@ class popup:
         self.height = 2 + len(commands)                                             # includes box
         self.width = 4 + max(len(name), max(len(command) for command in commands))  # includes box and inside spacing
 
-        print(f"popup.__init__({name=}, {commands=}, {begin_y=}, {begin_x=})", file=screen.app.trace_file)
+        screen.app.trace(f"popup.__init__({name=}, {commands=}, {begin_y=}, {begin_x=})")
 
         assert 1 <= begin_y, f"popup.__init__({name=}) {begin_y=} < 1"
         self.saved_height = self.height + 1
@@ -301,9 +302,8 @@ class popup:
         else:
             self.saved_width = self.width + 2
 
-        print(f"popup.__init__: {self.begin_y=}, {self.begin_x=}, "
-              f"{self.saved_y=}, {self.saved_x=}, {self.height=}, {self.width=})",
-              file=screen.app.trace_file)
+        screen.app.trace(f"popup.__init__: {self.begin_y=}, {self.begin_x=}, "
+              f"{self.saved_y=}, {self.saved_x=}, {self.height=}, {self.width=})")
 
         self.saved_chars = [[screen.app.stdscr.inch(line, col)
                              for col in range(self.saved_x, self.saved_x + self.saved_width)]
@@ -325,7 +325,7 @@ class popup:
         self.select(1)
 
     def process_key(self, key):
-        print(f"popup.process_key({key=})", file=self.screen.app.trace_file)
+        self.screen.app.trace(f"popup.process_key({key=})")
         if key == 'KEY_DOWN':
             if self.selection + 1 < self.height - 1:
                 self.select(self.selection + 1)
@@ -341,7 +341,7 @@ class popup:
 
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
-        print(f"popup.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})", file=self.screen.app.trace_file)
+        self.screen.app.trace(f"popup.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})")
         if not self.enclose(y, x) or not (self.begin_y < y < self.begin_y + self.height - 1):
             return mouse_event
         if bstate == curses.BUTTON1_CLICKED:
@@ -353,9 +353,9 @@ class popup:
             return mouse_event
 
     def execute(self):
-        print(f"popup.execute(): {self.selection=}", file=self.screen.app.trace_file)
+        self.screen.app.trace(f"popup.execute(): {self.selection=}")
         command = self.commands[self.selection - 1]
-        print(f"popup.execute(): {command=}", file=self.screen.app.trace_file)
+        self.screen.app.trace(f"popup.execute(): {command=}")
         self.delete()
         return self.cmd_fn(command)
 
@@ -367,7 +367,7 @@ class popup:
 
         So first command is 1, last command is self.height - 2
         '''
-        print(f"popup.select({y=})", file=self.screen.app.trace_file)
+        self.screen.app.trace(f"popup.select({y=})")
         assert 0 < y < self.height - 1, \
            f"popup.select: {y=} out of range {1}-{self.height - 2}"
         if self.selection is not None:
@@ -377,7 +377,7 @@ class popup:
         self.subwin.noutrefresh()
 
     def delete(self):
-        print(f"popup.delete()", file=self.screen.app.trace_file)
+        self.screen.app.trace(f"popup.delete()")
         if self.subwin is not None:
             del self.subwin
             self.subwin = None
