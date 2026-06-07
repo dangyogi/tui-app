@@ -27,11 +27,11 @@ def wrap_3_lines():
     (12, 9),
     (30, 28),
 ])
-def test_last_non_blank(wrap_1_line, end, ans):
+def test_first_non_blank_left(wrap_1_line, end, ans):
            #          1         2         3
            #0123456789012345678901234567890
     text = " Returns a    standard 1-line  "
-    assert wrap_1_line.last_non_blank(text, end) == ans
+    assert wrap_1_line.first_non_blank_left(text, end) == ans
 
 
 @pytest.mark.parametrize("start, ans", [

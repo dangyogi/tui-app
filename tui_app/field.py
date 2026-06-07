@@ -52,8 +52,8 @@ class wrapper:
             elif wtext[next] == ' ':
                 # next hit in between words.
                 # find last non-blank char on line
-                last_non_blank = self.last_non_blank(wtext, next)
-                yield start_offset + offset, self.align(wtext[offset: last_non_blank + 1])
+                first_non_blank_left = self.first_non_blank_left(wtext, next)
+                yield start_offset + offset, self.align(wtext[offset: first_non_blank_left + 1])
                 offset = self.first_non_blank(wtext, next + 1)
             else:
                 # next hit in the middle of a word.
@@ -63,7 +63,7 @@ class wrapper:
                 yield start_offset + offset, self.align(wtext[offset: next])
                 offset = next
 
-    def last_non_blank(self, text, end):
+    def first_non_blank_left(self, text, end):
         r'''Scans back from end to find the index to the last non-blank char in text.
 
         Assumes end points to a blank char in text.  Thus, end is one past the end of the text to consider.
@@ -84,6 +84,24 @@ class wrapper:
         while start < len(text) and text[start] == ' ':
             start += 1
         return start
+
+    def start_of_word(self, text, index):
+        r'''Scans backward from index for the start of the word.
+
+        index should point to a non-space character.
+        '''
+        while index > 0 and text[index - 1] != ' ':
+            index -= 1
+        return index
+
+    def end_of_word(self, text, index):
+        r'''Scans forward from index for the end of the word.
+
+        index should point to a non-space character.
+        '''
+        while index + 1 < len(text) and text[index + 1] != ' ':
+            index += 1
+        return index
 
     def align(self, line):
         pad = ' ' * (self.ncols - len(line))
@@ -140,6 +158,7 @@ class read_only_field:
 
         Recalculates self.scroll position.
         '''
+        # FIX: Recalculate scroll position
         self.trace(f"field({self.name}).paint({self.text=!r})")
         self.starts = []
         stdscr = self.wrapper.app.stdscr
@@ -186,6 +205,40 @@ class read_only_field:
             print(f"{self.name}.gen_locations: calling gen_line({lineno=})")
             yield from gen_line(lineno)
 
+    def get_lineno(self, index):
+        r'''Returns None if index not visible.
+        '''
+        if index < self.starts[0]:
+            return None
+        for lineno in range(1, self.nlines):
+            start = self.starts[lineno]
+            if start is None:
+                if index < self.starts[lineno - 1] + self.ncols:
+                    return lineno - 1
+                return None
+            if index < start:
+                return lineno - 1
+        if index < self.starts[-1] + self.ncols:
+            return self.nlines - 1
+        return None
+
+    def get_col(self, index):
+        r'''Returns None if index not visible.
+        '''
+        if index < self.starts[0]:
+            return None
+        for lineno in range(1, self.nlines):
+            start = self.starts[lineno]
+            if start is None:
+                if index < self.starts[lineno - 1] + self.ncols:
+                    return min(self.ncols - 1, index - self.starts[lineno - 1])
+                return None
+            if index < start:
+                return min(self.ncols - 1, index - self.starts[lineno - 1])
+        if index < self.starts[-1] + self.ncols:
+            return min(self.ncols - 1, index - self.starts[-1])
+        return None
+
 
 class editable_field(read_only_field):
     pos_attr = curses.A_REVERSE
@@ -208,7 +261,7 @@ class editable_field(read_only_field):
         return ans
 
     def to_index(self, y, x):
-        r'''Converts local (subwin) coordinates to text index.
+        r'''Converts screen coordinates to text index.
         '''
         assert y >= self.begin_y and y < self.begin_y + self.nlines, \
                f"editable_field({self.name}).to_index({y=}, {x=}): y out of bounds {self.begin_y=}, {self.nlines=}"
@@ -259,14 +312,31 @@ class editable_field(read_only_field):
             else:
                 self.chgat(self.position + self.selection_len, abs(self.selection_len), attr)
 
-    def insert(self, text, offset=0):
-        self.paint(self.text[: offset] + text + self.text[offset:])
+    def set_position(self, index):
+        self.trace(f"field({self.name}).set_position({index=})")
+        self.set_attr(reset=True)
+        self.position = index
+        self.selection_len = 0
+        self.set_attr()
+        self.screen.activate_field(self)
 
-    def replace(self, text, offset=0):
-        self.paint(self.text[: offset] + text + self.text[offset + len(text):])
-
-    def delete(self, nchars, offset=0, insch=''):
-        self.paint(self.text[: offset] + insch + self.text[offset + nchars:])
+    def set_selection(self, start, end):
+        r'''if positive selection (end >= start):
+              start is leftmost selected char and end is one past rightmost selected char.
+              self.selection_len ends up >= 0
+           otherwise 
+              start is one past rightmost selected char and end is leftmost selected char.
+              self.selection_len ends up < 0, which essentially reverses start and end.
+        '''
+        length = end - start   # negative, if selecting to the left
+        if start == self.position and length == self.selection_len:
+            self.trace(f"field({self.name}).set_selection({start=}, {end=}): no change!")
+        else:
+            self.trace(f"field({self.name}).set_selection({start=}, {end=})")
+            self.set_attr(reset=True)
+            self.set_position(start)
+            self.selection_len = length
+            self.set_attr()
 
     def process_mouse(self, mouse_event):
         r'''Caller ensures self.enclose on mouse_event
@@ -278,27 +348,24 @@ class editable_field(read_only_field):
         match bstate:
             case tui_base.curses.BUTTON1_CLICKED:
                 self.trace(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_CLICKED")
-                self.set_attr(reset=True)
-                self.selection_len = 0
-                self.position = index
-                self.set_attr()
+                self.set_position(index)
             case tui_base.curses.BUTTON1_DOUBLE_CLICKED:
-                self.trace(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_DOUBLE_CLICKED")
-                text = self.get_text()
-                start = text.rfind(' ', 0, index) + 1
-                end = text.find(' ', index)
-                if end == -1:
-                    end = len(text)
-                while text[end - 1] in ',.;':
-                    end -= 1
-                self.set_selection(start, end)
+                if text[index] == ' ':
+                    self.trace(f"field({self.name}).process_mouse({y=}, {x=}): "
+                               f"BUTTON1_DOUBLE_CLICKED on space: ignored")
+                else:
+                    self.trace(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_DOUBLE_CLICKED")
+                    start = self.wrapper.start_of_word(text, index)
+                    end = self.wrapper.end_of_word(text, index)
+                    while text[end] in ',.;':
+                        end -= 1
+                    self.set_selection(start, end + 1)
             case tui_base.curses.BUTTON1_TRIPLE_CLICKED:
                 self.trace(f"field({self.name}).process_mouse({y=}, {x=}): BUTTON1_TRIPLE_CLICKED")
-                self.set_selection(0, len(self.get_text()))
+                self.set_selection(0, len(self.text))
             case tui_base.curses.BUTTON1_PRESSED:
                 self.trace(f"field({self.name}).process_mouse({y=}, {x=}): "
                            f"{self.in_select=} BUTTON1_PRESSED")
-                self.set_attr(reset=True)
                 self.set_position(index)
                 self.in_select = True
             case tui_base.curses.REPORT_MOUSE_POSITION if self.in_select:
@@ -323,7 +390,6 @@ class editable_field(read_only_field):
         if len(key) == 1 and tui_base.curses.ascii.isprint(key):
             self.trace(f"field({self.name}).process_key({key=}): {self.position=}, ascii.is_print")
             self.delete_selection(key)
-            self.position += 1
         else:
             match key:
                 case 'KEY_DELETE' | 'KEY_DC' | 'KEY_BACKSPACE' if self.selection_len:
@@ -334,92 +400,55 @@ class editable_field(read_only_field):
                     # delete char at self.position
                     self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
                                f"no selection, delch at cursor")
-                    self.delete(1, self.position)
+                    self.delete(1, self.position)  # erases all attrs
+                    self.set_attr()
                 case 'KEY_BACKSPACE' if not self.selection_len and self.position > 0:
                     # delete char to left of self.position
                     self.position -= 1
                     self.delete(1, self.position)
-                case 'KEY_UP' if y > 0:
-                    new_y = y - 1
-                    self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
-                               f"no selection, move to {new_y=}, {x=}")
-                    self.set_position(new_y, x)
-                case 'KEY_DOWN' if y + 1 < self.nlines:
-                    new_y = y + 1
-                    self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
-                               f"no selection, move to {new_y=}, {x=}")
-                    self.set_position(new_y, x)
-                case 'KEY_LEFT' if x > 0:
-                    self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
-                               f"no selection, move to {y=}, {new_x=}")
-                    self.set_position(y, new_x)
-                case 'KEY_RIGHT' if x + 1 < self.width:
-                    new_x = x + 1
-                    self.trace(f"field({self.name}).process_key({key=}): {self.position=}, "
-                               f"no selection, move to {y=}, {new_x=}")
-                    self.set_position(y, new_x)
+                    self.set_attr()
+                case 'KEY_UP' if self.get_lineno(self.position) > 0:
+                    new_y = self.get_lineno(self.position) - 1
+                    x = self.get_col(self.position)
+                    self.trace(f"field({self.name}).process_key({key=}): {self.position=}, move to {new_y=}, {x=}")
+                    self.set_position(self.to_index(new_y + self.begin_y, x + self.begin_x))
+                case 'KEY_DOWN' if self.get_lineno(self.position) + 1 < self.nlines:
+                    new_y = self.get_lineno(self.position) + 1
+                    x = self.get_col(self.position)
+                    self.trace(f"field({self.name}).process_key({key=}): {self.position=}, move to {new_y=}, {x=}")
+                    self.set_position(self.to_index(new_y + self.begin_y, x + self.begin_x))
+                case 'KEY_LEFT' if self.get_col() > 0 or self.get_lineno(self.position) > 0:
+                    self.trace(f"field({self.name}).process_key({key=}): {self.position=}, move to {y=}, {new_x=}")
+                    self.set_position(self.position - 1)
+                case 'KEY_RIGHT' if self.get_col() + 1 < self.ncols or \
+                                    self.get_lineno(self.position) + 1 < self.nlines:
+                    self.trace(f"field({self.name}).process_key({key=}): {self.position=}, move to {y=}, {new_x=}")
+                    self.set_position(self.position + 1)
                 case _:
                     self.trace(f"field({self.name}).process_key({key=}): unknown key")
                     return key
-        self.subwin.noutrefresh()
         return None
 
-    def set_selection(self, start, end):
-        r'''end is one past last selected char.
-        '''
-        assert end > start, f"field({self.name}).set_selection: {end=} not greater than {start=}"
-        self.trace(f"field({self.name}).set_selection({start=}, {end=})")
-        self.set_attr(reset=True)
-        self.set_position(start)
-        self.selection_len = end - start
-        self.set_attr()
+    def insert(self, text, offset=0):
+        self.paint(self.text[: offset] + text + self.text[offset:])
 
-    def extend_selection(self, y, x):
-        cur_index = self.to_index(*self.position)
-        new_index = self.to_index(y, x)
-        if new_index >= cur_index:
-            new_len = new_index - cur_index + 1
-        else:
-            new_len = new_index - cur_index
-        self.trace(f"field({self.name}).extend_selection({y=}, {x=}) {self.position=}, "
-                   f"{self.selection_len=}: -> {new_len=}")
-        if self.selection_len != new_len:
-            if self.selection_len >= 0:
-                if new_len > self.selection_len:
-                    # select from old_len to new_len
-                    y_start, x_start = self.pos_offset(self.selection_len)
-                    self.subwin.chgat(y_start, x_start, new_len - self.selection_len,
-                                      tui_base.curses.color_pair(self.selection_pair))
-                else: # self.selection_len > new_len:
-                    # deselect from new_len to self.selection_len
-                    y_start, x_start = self.pos_offset(new_len)
-                    # do max here to also clear pos_attr in case we're starting out moving left
-                    self.subwin.chgat(y_start, x_start, max(1, self.selection_len) - new_len,
-                                      tui_base.curses.color_pair(self.normal_pair))
-                    if new_len < 0:
-                        self.subwin.chgat(y_start, x_start, -new_len,
-                                          tui_base.curses.color_pair(self.selection_pair))
-            else: # self.selection_len < 0
-                if new_len < self.selection_len:
-                    # select from new_len to old_len
-                    y_start, x_start = self.pos_offset(new_len)
-                    self.subwin.chgat(y_start, x_start, self.selection_len - new_len,
-                                      tui_base.curses.color_pair(self.selection_pair))
-                else: # new_len > self.selection_len
-                    # deselect from self.selection_len to new_len
-                    y_start, x_start = self.pos_offset(self.selection_len)
-                    self.subwin.chgat(y_start, x_start, new_len - self.selection_len,
-                                      tui_base.curses.color_pair(self.normal_pair))
-                    if new_len > 0:
-                        y, x = self.position
-                        self.subwin.chgat(y, x, new_len,
-                                          tui_base.curses.color_pair(self.selection_pair))
-            self.selection_len = new_len
+   #def replace(self, text, offset=0):
+   #    self.paint(self.text[: offset] + text + self.text[offset + len(text):])
+
+    def delete(self, nchars, offset=0, insch=''):
+        self.paint(self.text[: offset] + insch + self.text[offset + nchars:])
+
+    def extend_selection(self, last):
+        if last >= self.position:
+            last += 1
+        self.set_selection(self.position, last)
+        self.trace(f"field({self.name}).extend_selection({last=}): {self.position=}, {self.selection_len=}")
 
     def delete_selection(self, insch=None):
         if not self.selection_len:
             if insch is not None:
                 self.insert(insch, self.position)
+                self.set_position(self.position + 1)
         else:
             if self.selection_len > 0:
                 pos = self.position
@@ -427,16 +456,10 @@ class editable_field(read_only_field):
                 pos = self.position + self.selection_len
             self.trace(f"field({self.name}).delete_selection(): {pos=}, {self.selection_len=}")
             self.delete(abs(self.selection_len), pos, insch)
-            self.selection_len = 0
-            self.set_position(pos)
-
-    def set_position(self, index):
-        self.trace(f"field({self.name}).set_position({index=})")
-        self.set_attr(reset=True)
-        self.position = index
-        self.selection_len = 0
-        self.set_attr()
-        self.screen.activate_field(self)
+            if insch is not None:
+                self.set_position(pos + 1)
+            else:
+                self.set_position(pos)
 
     def deactivate(self):
         self.set_attr(reset=True)

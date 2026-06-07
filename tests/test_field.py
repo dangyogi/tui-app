@@ -42,6 +42,12 @@ def e_field(text, wrap_3_lines):
 
 
 def test_gen_locations(ro_field):
+    # scroll 0:
+    #       12345678901234567890
+    # ( 0, "but are created     ")
+    # (16, "automatically when  ")
+    # (35, "test functions [...]")
+
     ro_field.starts = [0, 16, 35]
     locations = list(ro_field.gen_locations(8, 57))
     assert len(locations) == 3
@@ -67,6 +73,148 @@ def test_gen_locations3(ro_field):
     assert len(locations) == 2
     assert locations[0] == (10, 36, 8)
     assert locations[1] == (11, 30, 11)
+
+
+@pytest.mark.parametrize("index, lineno", [
+    (0, 0),      # 'b' in but
+    (15, 0),     # space between "created" and "automatically"
+    (16, 1),     # first 'a' in "automatically"
+    (34, 1),     # space between "when" and "test"
+    (35, 2),     # first 't' in test
+    (48, 2),     # 's' in functions
+    (49, 2),     # overlapped by right_placeholder
+    (54, 2),     # overlapped by right_placeholder
+    (55, None),  # past 3rd line
+    (56, None),  # past 3rd line
+    (57, None),  # past 3rd line
+])
+def test_get_lineno(ro_field, index, lineno):
+    # scroll 0:
+    #       12345678901234567890
+    # ( 0, "but are created     ")
+    # (16, "automatically when  ")
+    # (35, "test functions [...]")
+
+    ro_field.starts = [0, 16, 35]
+    assert ro_field.get_lineno(index) == lineno
+
+
+@pytest.mark.parametrize("index, lineno", [
+    (0, None),  # 'b' in but
+    (18, None), # first 't' in automatically
+    (19, 0),    # overlapped by left_placeholder
+    (24, 0),    # overlapped by left_placeholder
+    (25, 0),    # last 'a' in automatically
+    (38, 0),    # end of "test"
+    (39, 0),    # space between "test" and "functions"
+    (40, 1),    # 'f' in "functions"
+    (56, 1),    # 't' in "request"
+    (57, 1),    # space between "request" and "them"
+    (58, 2),    # 't' in "them"
+    (76, 2),    # '.'
+])
+def test_get_lineno2(ro_field, index, lineno):
+    # scroll 19:
+    #       12345678901234567890
+    # (19, "[...] ally when test")
+    # (40, "functions request   ")
+    # (58, "them as parameters. ")
+
+    ro_field.scroll = 19
+    ro_field.starts = [19, 40, 58]
+    assert ro_field.get_lineno(index) == lineno
+
+
+@pytest.mark.parametrize("index, lineno", [
+    (0, None),
+    (51, None),
+    (52, 0),    # overlapped by left_placeholder
+    (57, 0),    # overlapped by left_placeholder
+    (58, 0),
+    (66, 1),
+    (76, 1),
+])
+def test_get_lineno3(ro_field, index, lineno):
+    # scroll 52:
+    #         12345678901234567890
+    # (52,   "[...] them as       ")
+    # (66,   "parameters.         ")
+    # (None, "                    ")
+
+    ro_field.scroll = 52
+    ro_field.starts = [52, 66, None]
+    assert ro_field.get_lineno(index) == lineno
+
+
+@pytest.mark.parametrize("index, col", [
+    (0, 0),      # 'b' in but
+    (15, 15),    # space between "created" and "automatically"
+    (16, 0),     # first 'a' in "automatically"
+    (34, 18),    # space between "when" and "test"
+    (35, 0),     # first 't' in test
+    (48, 13),    # 's' in functions
+    (49, 14),    # overlapped by right_placeholder
+    (54, 19),    # overlapped by right_placeholder
+    (55, None),  # past 3rd line
+    (56, None),  # past 3rd line
+    (57, None),  # past 3rd line
+])
+def test_get_col(ro_field, index, col):
+    # scroll 0:
+    #       12345678901234567890
+    # ( 0, "but are created     ")
+    # (16, "automatically when  ")
+    # (35, "test functions [...]")
+
+    ro_field.starts = [0, 16, 35]
+    assert ro_field.get_col(index) == col
+
+
+@pytest.mark.parametrize("index, col", [
+    (0, None),  # 'b' in but 
+    (18, None), # first 't' in automatically
+    (19, 0),    # overlapped by left_placeholder
+    (24, 5),    # overlapped by left_placeholder
+    (25, 6),    # last 'a' in automatically
+    (38, 19),   # end of "test"
+    (39, 19),   # space between "test" and "functions"
+    (40, 0),    # 'f' in "functions"
+    (56, 16),   # 't' in "request"
+    (57, 17),   # space between "request" and "them"
+    (58, 0),    # 't' in "them"
+    (76, 18),   # '.'
+])
+def test_get_col2(ro_field, index, col):
+    # scroll 19:
+    #       12345678901234567890
+    # (19, "[...] ally when test")
+    # (40, "functions request   ")
+    # (58, "them as parameters. ")
+
+    ro_field.scroll = 19
+    ro_field.starts = [19, 40, 58]
+    assert ro_field.get_col(index) == col
+
+
+@pytest.mark.parametrize("index, col", [
+    (0, None),
+    (51, None),
+    (52, 0),    # overlapped by left_placeholder
+    (57, 5),    # overlapped by left_placeholder
+    (58, 6),    # 't' in them
+    (66, 0),
+    (76, 10),   # '.'
+])
+def test_get_col3(ro_field, index, col):
+    # scroll 52:
+    #         12345678901234567890
+    # (52,   "[...] them as       ")
+    # (66,   "parameters.         ")
+    # (None, "                    ")
+
+    ro_field.scroll = 52
+    ro_field.starts = [52, 66, None]
+    assert ro_field.get_col(index) == col
 
 
 @pytest.mark.parametrize("y, ans_y", [
