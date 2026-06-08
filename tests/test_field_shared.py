@@ -1,24 +1,24 @@
-# test_wrapper.py
+# test_field_shared.py
 
 import pytest
-from tui_app.field import wrapper
+from tui_app.field import field_shared
 
 
-def mk_wrap_1_line(alignment):
-    """Returns a standard 1-line high wrapper for evaluating table cells."""
-    return wrapper("wrap_1_line", nlines=1, ncols=20, alignment=alignment)
-
-@pytest.fixture
-def wrap_1_line():
-    return mk_wrap_1_line("left")
+def mk_share_1_line(alignment):
+    """Returns a standard 1-line high field_shared for evaluating table cells."""
+    return field_shared("share_1_line", nlines=1, begin_x=0, ncols=20, alignment=alignment)
 
 @pytest.fixture
-def wrap_1_line_right():
-    return mk_wrap_1_line("right")
+def share_1_line():
+    return mk_share_1_line("left")
 
 @pytest.fixture
-def wrap_3_lines():
-    return wrapper("wrap_3_lines", nlines=3, ncols=20, alignment="left")
+def share_1_line_right():
+    return mk_share_1_line("right")
+
+@pytest.fixture
+def share_3_lines():
+    return field_shared("share_3_lines", nlines=3, begin_x=0, ncols=20, alignment="left")
 
 
 @pytest.mark.parametrize("end, ans", [
@@ -27,11 +27,11 @@ def wrap_3_lines():
     (12, 9),
     (30, 28),
 ])
-def test_first_non_blank_left(wrap_1_line, end, ans):
+def test_first_non_blank_left(share_1_line, end, ans):
            #          1         2         3
            #0123456789012345678901234567890
     text = " Returns a    standard 1-line  "
-    assert wrap_1_line.first_non_blank_left(text, end) == ans
+    assert share_1_line.first_non_blank_left(text, end) == ans
 
 
 @pytest.mark.parametrize("start, ans", [
@@ -40,11 +40,11 @@ def test_first_non_blank_left(wrap_1_line, end, ans):
     (11, 14),
     (29, 31),
 ])
-def test_first_non_blank(wrap_1_line, start, ans):
+def test_first_non_blank(share_1_line, start, ans):
            #          1         2         3
            #0123456789012345678901234567890
     text = " Returns a    standard 1-line  "
-    assert wrap_1_line.first_non_blank(text, start) == ans
+    assert share_1_line.first_non_blank(text, start) == ans
 
 
 @pytest.mark.parametrize("text_in, text_out", [
@@ -53,17 +53,17 @@ def test_first_non_blank(wrap_1_line, start, ans):
     ("asdfasdfasdf sdf sadf asd", "asdfasdfasdf sdf sadf asd"),
     ("asdfasdfasdf sdf", "asdfasdfasdf sdf    "),
 ])
-def test_align(wrap_1_line, text_in, text_out):
-    assert wrap_1_line.align(text_in) == text_out
+def test_align(share_1_line, text_in, text_out):
+    assert share_1_line.align(text_in) == text_out
 
 
-def test_wrap0(wrap_1_line):
+def test_wrap0(share_1_line):
     """Verifies layout text behavior when scroll is zero (no shifting)."""
     text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     scroll = 0
 
     # Extract the yielded lines from the generator
-    lines = list(wrap_1_line.wrap(text, scroll))
+    lines = list(share_1_line.wrap(text, scroll))
     assert len(lines) == 1
 
     start_offset, rendered_line = lines[0]
@@ -76,7 +76,7 @@ def test_wrap0(wrap_1_line):
     assert rendered_line.endswith(" [...]")
 
 @pytest.mark.parametrize("scroll", (1, 2, 3, 4, 5))
-def test_cut_at_both_ends(wrap_1_line, scroll):
+def test_cut_at_both_ends(share_1_line, scroll):
     """Validates that under the unified index formula (index = x + scroll),
 
     the correct first visible character lands at screen column x=6 when scroll > 0.
@@ -84,7 +84,7 @@ def test_cut_at_both_ends(wrap_1_line, scroll):
     text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     # Screen column x=6 must map to text index: 6 + scroll
 
-    lines = list(wrap_1_line.wrap(text, scroll))
+    lines = list(share_1_line.wrap(text, scroll))
     assert len(lines) == 1
     start_index, rendered_line = lines[0]
     assert len(rendered_line) == 20
@@ -97,11 +97,11 @@ def test_cut_at_both_ends(wrap_1_line, scroll):
 
 
 @pytest.mark.parametrize("scroll", (6, 7, 8, 19))
-def test_right_fits(wrap_1_line, scroll):
+def test_right_fits(share_1_line, scroll):
     """Parametrized check evaluating text slice points across varying shift levels."""
     text = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-    lines = list(wrap_1_line.wrap(text, scroll))
+    lines = list(share_1_line.wrap(text, scroll))
     assert len(lines) == 1
     start_index, rendered_line = lines[0]
     assert len(rendered_line) == 20
@@ -112,17 +112,17 @@ def test_right_fits(wrap_1_line, scroll):
     assert rendered_line[len(text) - 1 - scroll] == text[-1]
 
 
-@pytest.mark.parametrize("wrapper, result", [
-    (mk_wrap_1_line("left"),  "Hello World!        "),
-    (mk_wrap_1_line("right"), "        Hello World!"),
+@pytest.mark.parametrize("field_shared, result", [
+    (mk_share_1_line("left"),  "Hello World!        "),
+    (mk_share_1_line("right"), "        Hello World!"),
 ])
-def test_short_text_blank_padding(wrapper, result):
+def test_short_text_blank_padding(field_shared, result):
     """Ensures short lines fill the layout matrix cleanly with empty trailing whitespace."""
                  #          1         2         3
                  #0123456789012345678901234567890
     short_text = "Hello World!"
 
-    lines = list(wrapper.wrap(short_text))
+    lines = list(field_shared.wrap(short_text))
     assert len(lines) == 1
     start_index, rendered_line = lines[0]
     assert len(rendered_line) == 20
@@ -137,8 +137,8 @@ def text():
            #12345678901234567890123456789012345678901234567890123456789012345678901234567890
     return "but are created automatically when test functions request them as parameters."
 
-def test_multi_line(wrap_3_lines, text):
-    lines = list(wrap_3_lines.wrap(text))
+def test_multi_line(share_3_lines, text):
+    lines = list(share_3_lines.wrap(text))
     assert len(lines) == 3
                             #12345678901234567890
     assert lines[0] == ( 0, "but are created     ")
@@ -146,8 +146,8 @@ def test_multi_line(wrap_3_lines, text):
     assert lines[2] == (35, "test functions [...]")
 
 
-def test_multi_line2(wrap_3_lines, text):
-    lines = list(wrap_3_lines.wrap(text, scroll=29))
+def test_multi_line2(share_3_lines, text):
+    lines = list(share_3_lines.wrap(text, scroll=29))
     assert len(lines) == 3
                             #12345678901234567890
     assert lines[0] == (29, "[...] test functions")
@@ -155,8 +155,8 @@ def test_multi_line2(wrap_3_lines, text):
     assert lines[2] == (66, "parameters.         ")
 
 
-def test_multi_line3(wrap_3_lines, text):
-    lines = list(wrap_3_lines.wrap(text, scroll=52))
+def test_multi_line3(share_3_lines, text):
+    lines = list(share_3_lines.wrap(text, scroll=52))
     assert len(lines) == 3
                               #12345678901234567890
     assert lines[0] == (52,   "[...] them as       ")

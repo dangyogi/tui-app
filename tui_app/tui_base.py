@@ -243,12 +243,14 @@ class screen:
         self.lines = curses.LINES
         self.cols = curses.COLS
         self.app.trace(f"draw(): {self.lines=}, {self.cols=}")
-       #if self.width is None:
-       #    self.width = self.cols
-        self.width = self.cols
+        if self.width is None:
+            title_x = (self.cols - len(self.title)) // 2   # center title
+        else:
+            assert self.width < self.cols, \
+                   f"ERROR: Screen not wide enough, must be at least {self.width + 1} columns"
+            title_x = (self.width - len(self.title)) // 2   # center title
         self.delete()
         self.app.stdscr.erase()
-        title_x = (self.width - len(self.title)) // 2   # center title
         self.app.stdscr.addstr(0, title_x, self.title, curses.A_REVERSE)   # center title
         self.app.draw_changed(title_x)
         self.draw_body()

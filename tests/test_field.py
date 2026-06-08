@@ -1,12 +1,12 @@
 # test_field.py
 
 import pytest
-from tui_app.field import wrapper, read_only_field, editable_field
+from tui_app.field import field_shared, read_only_field, editable_field
 
 
 @pytest.fixture
-def wrap_3_lines():
-    return wrapper("wrap_3_lines", nlines=3, ncols=20)
+def share_3_lines():
+    return field_shared("share_3_lines", nlines=3, begin_x=30, ncols=20)
 
 @pytest.fixture
 def text():
@@ -33,12 +33,12 @@ def text():
     # (None, "                    ")
 
 @pytest.fixture
-def ro_field(text, wrap_3_lines):
-    return read_only_field(text, wrap_3_lines, begin_y=10, begin_x=30, paint=False)
+def ro_field(text, share_3_lines):
+    return read_only_field(text, share_3_lines, begin_y=10, paint=False)
 
 @pytest.fixture
-def e_field(text, wrap_3_lines):
-    return editable_field(text, wrap_3_lines, begin_y=10, begin_x=30, paint=False)
+def e_field(text, share_3_lines):
+    return editable_field(text, share_3_lines, begin_y=10, paint=False)
 
 
 def test_gen_locations(ro_field):

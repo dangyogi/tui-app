@@ -39,7 +39,7 @@ See the tui_base.py module doc string for how the tui library works.
 import math
 
 from . import tui_base
-from .field import wrapper, read_only_field, editable_field
+from .field import field_shared, read_only_field, editable_field
 
 
 def start(tables, top_screen=None):
@@ -142,7 +142,8 @@ class table_screen(tui_base.screen):
         self.columns = self.table.columns
         self.max_lens = []
         self.column_names = []
-        self.wrappers = []
+        self.field_shareds = []
+        begin_x = 0
         for column in self.columns:
             if column.min_width is not None:
                 max_len = column.min_width
@@ -160,8 +161,10 @@ class table_screen(tui_base.screen):
             if len(name) > max_len:
                 max_len = len(name)
             self.max_lens.append(max_len)
-            self.wrappers.append(wrapper(name, 1, max_len, self.app, column.alignment))
-        self.width = sum(self.max_lens) + len(self.max_lens) - 1
+            self.field_shareds.append(field_shared(name, 1, begin_x, max_len, self.app, column.alignment,
+                                                   left_placeholder="<", right_placeholder=">"))
+            begin_x += max_len + 1
+        self.width = begin_x - 1
         self.app.trace(f"table_screen.init({self.table.name=}, {self.width=})")
         for col, max_len in zip(self.column_names, self.max_lens):
             self.app.trace(f"{col=}, {max_len=}")
@@ -302,12 +305,12 @@ class table_screen(tui_base.screen):
                 break
             fields = []
             begin_x = 0
-            for column, max_len, wrapper in zip(self.columns, self.max_lens, self.wrappers):
+            for column, max_len, field_shared in zip(self.columns, self.max_lens, self.field_shareds):
                 if column.can_edit:
                     f_type = editable_field
                 else:
                     f_type = read_only_field
-                fields.append(f_type(row.get(column.name), wrapper, lineno, begin_x))
+                fields.append(f_type(row.get(column.name), field_shared, lineno))
                 begin_x += max_len + 1
 
 
@@ -327,10 +330,6 @@ class row_screen(tui_base.screen):
             if len(column.name) > self.max_col_name_len:
                 self.max_col_name_len = len(column.name)
         self.app.trace(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
-
-    def delete(self):
-        for field in self.fields:
-            field.delete()
 
     def activate_field(self, field):
         self.app.trace(f"row_screen.activate_field({field.name=})")
@@ -386,7 +385,12 @@ class row_screen(tui_base.screen):
             nlines = max(1, math.ceil(value_len * 1.2 / self.width))
             lineno_by_col.append(lineno)
             self.app.trace(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}")
-            self.fields.append(field(self, value, column, nlines, lineno))
+            shared = field_shared(column.name, nlines, self.begin_x, self.width, self.app)
+            if column.can_edit:
+                f_type = editable_field
+            else:
+                f_type = read_only_field
+            self.fields.append(f_type(value, shared, lineno))
             lineno += nlines
         self.active_field = None
 
