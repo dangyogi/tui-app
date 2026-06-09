@@ -42,6 +42,11 @@ from . import tui_base
 from .field import field_shared, read_only_field, editable_field
 
 
+def event_handled(event):
+    r'''Used by both process_mouse and process_key.
+    '''
+    return event is None or event in ('APP_EXIT', 'APP_ABORT') or isinstance(event, tui_base.screen)
+
 def start(tables, top_screen=None):
     app_instance = app(tables, top_screen)
     tui_base.curses.wrapper(app_instance.run)
@@ -172,8 +177,7 @@ class table_screen(tui_base.screen):
     def process_mouse(self, mouse_event):
         if self.popup is not None:
             mouse_event = self.popup.process_mouse(mouse_event)
-            if mouse_event is None or mouse_event in ('APP_EXIT', 'APP_ABORT') \
-               or isinstance(mouse_event, tui_base.screen):
+            if event_handled(mouse_event):
                 return mouse_event
         _, x, y, _, bstate = mouse_event
         self.app.trace(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
@@ -204,7 +208,7 @@ class table_screen(tui_base.screen):
     def process_key(self, key):
         if self.popup is not None:
             key = self.popup.process_key(key)
-            if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
+            if event_handled(key):
                 return key
         self.app.trace(f"screen.process_key({key=})")
         if key == 'KEY_DOWN':
@@ -303,14 +307,14 @@ class table_screen(tui_base.screen):
         for lineno, row in enumerate(self.rows[first_row:], first_line):
             if lineno - first_line == nlines:
                 break
-            fields = []
+            self.fields = []
             begin_x = 0
             for column, max_len, field_shared in zip(self.columns, self.max_lens, self.field_shareds):
                 if column.can_edit:
                     f_type = editable_field
                 else:
                     f_type = read_only_field
-                fields.append(f_type(row.get(column.name), field_shared, lineno))
+                self.fields.append(f_type(len(self.fields), row.get(column.name), field_shared, lineno))
                 begin_x += max_len + 1
 
 
@@ -331,21 +335,29 @@ class row_screen(tui_base.screen):
                 self.max_col_name_len = len(column.name)
         self.app.trace(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
 
-    def activate_field(self, field):
-        self.app.trace(f"row_screen.activate_field({field.name=})")
-        if self.active_field is not None and self.active_field != field:
-            self.active_field.deactivate()
-        self.active_field = field
+    def activate_field(self, field_num):
+        self.app.trace(f"row_screen.activate_field({field_num=})")
+        if self.active_field != field_num:
+            if self.active_field is not None:
+                self.fields[self.active_field].deactivate()
+            self.active_field = field_num
+            field = self.fields[field_num]
+            if field.position is None:
+                field.position = 0
+                field.selection_len = 0
+            field.set_attrs()
 
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
         self.app.trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        # run command
         if bstate == tui_base.curses.BUTTON1_CLICKED:
             if y == self.button_y:
                 # check buttons
                 for i, (button_x_first, button_x_last) in enumerate(self.command_buttons_x):
                     if button_x_first <= x <= button_x_last:
                         return self.execute(self.commands[i])
+        # run this past the fields
         for field in self.fields:
             if field.enclose(y, x):
                 return field.process_mouse(mouse_event)
@@ -354,11 +366,35 @@ class row_screen(tui_base.screen):
     def process_key(self, key):
        #if self.popup is not None:
        #    key = self.popup.process_key(key)
-       #    if key is None or key in ('APP_EXIT', 'APP_ABORT') or isinstance(key, tui_base.screen):
+       #    if event_handled(key):
        #        return key
         self.app.trace(f"row_screen.process_key({key=}) {self.active_field=}")
         if self.active_field is not None:
-            return self.active_field.process_key(key)
+            key = self.fields[self.active_field].process_key(key)
+            if event_handled(key):
+                return key
+        if key == '\t':
+            active_field = self.active_field
+            if active_field is None:
+                offset = 0
+            else:
+                offset = active_field + 1
+            for i in range(len(self.fields)):
+                active_field = (offset + i) % len(self.fields)
+                if self.fields[active_field].can_edit:
+                    self.activate_field(active_field)
+                    return None
+        elif key == 'KEY_BTAB':
+            active_field = self.active_field
+            if active_field is None:
+                offset = len(self.fields)
+            else:
+                offset = active_field - 1
+            for i in range(len(self.fields)):
+                active_field = (offset - i) % len(self.fields)
+                if self.fields[active_field].can_edit:
+                    self.activate_field(active_field)
+                    return None
         return key
 
     def execute(self, command):
@@ -390,7 +426,7 @@ class row_screen(tui_base.screen):
                 f_type = editable_field
             else:
                 f_type = read_only_field
-            self.fields.append(f_type(value, shared, lineno))
+            self.fields.append(f_type(len(self.fields), value, shared, lineno))
             lineno += nlines
         self.active_field = None
 

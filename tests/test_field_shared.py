@@ -75,6 +75,21 @@ def test_wrap0(share_1_line):
     assert rendered_line.startswith("A")
     assert rendered_line.endswith(" [...]")
 
+
+def test_wrap0_empty(share_1_line):
+    """Verifies layout text behavior when scroll is zero (no shifting)."""
+    text = ""
+    scroll = 0
+
+    # Extract the yielded lines from the generator
+    lines = list(share_1_line.wrap(text, scroll))
+    assert len(lines) == 1
+
+    start_offset, rendered_line = lines[0]
+    assert start_offset == 0
+    assert rendered_line == "                    "
+
+
 @pytest.mark.parametrize("scroll", (1, 2, 3, 4, 5))
 def test_cut_at_both_ends(share_1_line, scroll):
     """Validates that under the unified index formula (index = x + scroll),
@@ -134,31 +149,40 @@ def test_short_text_blank_padding(field_shared, result):
 @pytest.fixture
 def text():
            #         1         2         3         4         5         6         7         8
-           #12345678901234567890123456789012345678901234567890123456789012345678901234567890
-    return "but are created automatically when test functions request them as parameters."
+           #1234567890123456789012345678901234567890123456789012345678901234567890123456789012345
+    return "but are created         automatically when test functions request them as parameters."
 
 def test_multi_line(share_3_lines, text):
     lines = list(share_3_lines.wrap(text))
     assert len(lines) == 3
                             #12345678901234567890
     assert lines[0] == ( 0, "but are created     ")
-    assert lines[1] == (16, "automatically when  ")
-    assert lines[2] == (35, "test functions [...]")
+    assert lines[1] == (24, "automatically when  ")
+    assert lines[2] == (43, "test functions [...]")
 
 
 def test_multi_line2(share_3_lines, text):
-    lines = list(share_3_lines.wrap(text, scroll=29))
+    lines = list(share_3_lines.wrap(text, scroll=27))
     assert len(lines) == 3
                             #12345678901234567890
-    assert lines[0] == (29, "[...] test functions")
-    assert lines[1] == (50, "request them as     ")
-    assert lines[2] == (66, "parameters.         ")
+    assert lines[0] == (27, "[...] ally when test")
+    assert lines[1] == (48, "functions request   ")
+    assert lines[2] == (66, "them as parameters. ")
 
 
 def test_multi_line3(share_3_lines, text):
-    lines = list(share_3_lines.wrap(text, scroll=52))
+    lines = list(share_3_lines.wrap(text, scroll=60))
     assert len(lines) == 3
                               #12345678901234567890
-    assert lines[0] == (52,   "[...] them as       ")
-    assert lines[1] == (66,   "parameters.         ")
+    assert lines[0] == (60,   "[...] them as       ")
+    assert lines[1] == (74,   "parameters.         ")
+    assert lines[2] == (None, "                    ")
+
+
+def test_multi_line_empty(share_3_lines):
+    lines = list(share_3_lines.wrap(""))
+    assert len(lines) == 3
+                              #12345678901234567890
+    assert lines[0] == (0,    "                    ")
+    assert lines[1] == (None, "                    ")
     assert lines[2] == (None, "                    ")

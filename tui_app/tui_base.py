@@ -106,6 +106,8 @@ import curses
 import curses.ascii
 
 
+__all__ = "curses init_screen bstate_str screen popup".split()
+
 def init_colors():
     r'''Loads colors as follows:
 
