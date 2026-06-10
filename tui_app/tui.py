@@ -9,8 +9,7 @@ It builds on three classes that you must write with the following interfaces:
     table:
         .name
         .columns
-        .screen_popup_commands   # list of strings, tui will add Back and Abort/Exit to the end of these.
-        .row_popup_commands      # list of strings, or None for row popup in table screen
+        .popup_commands          # list of strings, tui will add Back and Abort/Exit to the end of these.
         .get_rows(app, **select) # returns a list of selected row objects.
                                  # select keys are column_name (__eq assumed), or column_name__<lt|le|eq|ne|ge|gt>
                                  # results of select keys are and-ed.
@@ -38,6 +37,7 @@ See the tui_base.py module doc string for how the tui library works.
 '''
 
 import math
+from functools import partial
 
 from . import tui_base
 from .field import field_shared, read_only_field, editable_field
@@ -102,18 +102,15 @@ class app:
         if command in self.tables:
             self.trace("command is table, returning table_screen")
             return table_screen(self.tables[command], self.screen)
-        if command == 'Back':
-            return self.screen.back
-        if command == 'Exit':
-            self.trace(f"command is {command!r}, returning 'APP_EXIT'")
-            return 'APP_EXIT'
-        if command == 'Abort':
-            self.trace(f"command is {command!r}, returning 'APP_ABORT'")
-            return 'APP_ABORT'
-        if command == 'Change':
-            # for testing
-            self.set_changed()
-            return None
+        match command:
+            case 'Back':
+                return self.screen.back
+            case 'Exit':
+                self.trace(f"command is {command!r}, returning 'APP_EXIT'")
+                return 'APP_EXIT'
+            case 'Abort':
+                self.trace(f"command is {command!r}, returning 'APP_ABORT'")
+                return 'APP_ABORT'
         self.trace(f"app.execute({command=}): forwarding to screen")
         return self.screen.table.execute(self, command)
 
@@ -128,14 +125,13 @@ class table_screen(tui_base.screen):
         self.select = select
 
     @property
-    def commands(self):
+    def screen_popup_commands(self):
         ans = self.table.screen_popup_commands
         if self.back is not None:
             ans.append('Back')
         if self.app.changed:
             ans.append('Abort')
         else:
-            ans.append('Change')
             ans.append('Exit')
         return ans
 
@@ -144,7 +140,6 @@ class table_screen(tui_base.screen):
         '''
         self.app.trace(f"table_screen.init({self.table.name=})")
         self.rows = self.table.get_rows(self.app, **self.select)
-        self.row_popup_commands = self.table.row_popup_commands
         self.columns = self.table.columns
         self.max_lens = []
         self.column_names = []
@@ -188,8 +183,11 @@ class table_screen(tui_base.screen):
                 if self.popup is not None:
                     self.popup.delete()
                 self.popup_y = y - 2  # selected row#
-                self.popup = tui_base.popup(self.rows[self.first_row + self.popup_y].human_key(), self,
-                                            self.row_popup_commands, self.row_execute, y + 1, 4)
+                row = self.rows[self.first_row + self.popup_y]
+                self.app.trace(f"screen.process_mouse creating popup for row {self.first_row + self.popup_y}, "
+                               f"{row=}, commands={row.row_popup_commands}")
+                self.popup = tui_base.popup(row.human_key(), self, row.row_popup_commands,
+                                            partial(row.execute, self.app), y + 1, 4)
             else:
                 # table level popup at top of screen
                 if self.popup is not None:
@@ -198,7 +196,7 @@ class table_screen(tui_base.screen):
                     else:
                         return None                # this is a table level popup, just keep using it...
                 self.popup_y = None
-                self.popup = tui_base.popup("Screen", self, self.commands, self.app.execute, 1, 4)
+                self.popup = tui_base.popup("Screen", self, self.screen_popup_commands, self.app.execute, 1, 4)
         elif bstate == tui_base.curses.BUTTON4_PRESSED:
             self.scroll_down(self.scroll_amount)
         elif bstate == tui_base.curses.BUTTON5_PRESSED:
@@ -235,21 +233,6 @@ class table_screen(tui_base.screen):
        #    self.app.stdscr.chgat(6, 4, 1, tui_base.curses.A_UNDERLINE)  # works, not sure how useful it is...
         else:
             return key
-
-    def row_execute(self, command):
-        r'''Called for row popup.
-
-        Calls self.screen.table.execute if it does not recognize the command.
-        '''
-        self.app.trace(f"row_execute({self.popup_y=}, {command=})")
-        row = self.rows[self.first_row + self.popup_y]
-        match command:
-            case "View/Edit":
-                return row_screen(row, self)
-            case "Cancel":
-                return None
-            case _:
-                return row.execute(self.app, command)
 
     def scroll_up(self, nlines):
         self.app.trace(f"scroll_up({nlines})")
@@ -331,7 +314,7 @@ class row_screen(tui_base.screen):
         super().__init__(f"{row.table_name}: {row.human_key()}", back)
         self.row = row
         self.columns = self.row.columns
-        self.commands = list(row.commands) + ['Cancel', 'Submit']
+        self.row_screen_commands = list(row.row_screen_commands) + ['Cancel', 'Submit']
         self.fields = ()
 
     def init(self):
@@ -366,7 +349,7 @@ class row_screen(tui_base.screen):
                 # check buttons
                 for i, (button_x_first, button_x_last) in enumerate(self.command_buttons_x):
                     if button_x_first <= x <= button_x_last:
-                        return self.execute(self.commands[i])
+                        return self.execute(self.row_screen_commands[i])
         # run this past the fields
         for field in self.fields:
             if field.enclose(y, x):
@@ -460,11 +443,12 @@ class row_screen(tui_base.screen):
         # draw command buttons
         self.button_y = lineno + 3
         assert self.button_y < self.lines, f"{self.button_y=}: too many lines to fit on screen, {self.lines=}"
-        button_text_width = sum(len(command) for command in self.commands) + 3 * (len(self.commands) - 1)
+        button_text_width = sum(len(command) for command in self.row_screen_commands) \
+                          + 3 * (len(self.row_screen_commands) - 1)
         self.button_start_x = (self.cols - button_text_width) // 2
         button_x = self.button_start_x
         self.command_buttons_x = []
-        for command in self.commands:
+        for command in self.row_screen_commands:
             # 0xf1 is white on red, looks like error
             # 0xf2 is white on green, hard to read
             # 0xf3 is white on yellow, can't read it
