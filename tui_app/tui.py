@@ -476,12 +476,14 @@ class row_screen(tui_base.screen):
             button_x += 3 + len(command)
 
     def message(self, msg, attr):
-        self.app.stdscr.addstr(self.button_y + 2, self.button_start_x, msg, attr)
+        x = (self.cols - len(msg)) // 2  # center message
+        self.app.stdscr.addstr(self.button_y + 2, x, msg, attr)
         self.msg_len = len(msg)
 
     def clear_message(self):
         if self.msg_len:
-            self.app.stdscr.addstr(self.button_y + 2, self.button_start_x, ' ' * self.msg_len,
+            x = (self.cols - self.msg_len) // 2  # center message
+            self.app.stdscr.addstr(self.button_y + 2, x, ' ' * self.msg_len,
                                    tui_base.curses.color_pair(self.error_field.default_attr_pair))
             self.msg_len = 0
 
