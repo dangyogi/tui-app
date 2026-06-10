@@ -19,18 +19,19 @@ It builds on three classes that you must write with the following interfaces:
 
     column:
         .name
-        .abbr       # abbr name to save space on the screen.  May be None.
-        .min_width  # may be None, used for table view to fit all of the columns on the screen
-        .alignment  # "left" or "right"
-        .can_edit   # True/False
+        .abbr         # abbr name to save space on the screen.  May be None.
+        .min_width    # may be None, used for table view to fit all of the columns on the screen
+        .alignment    # "left" or "right"
+        .can_edit     # True/False
+        .validate(s)  # raises ValueError if s not valid
 
     row:
         .table_name
         .columns
-        .human_key()       # may be row_num
-        .get(column_name)  # returns string to display
+        .human_key()            # may be row_num
+        .get(column_name)       # returns string to display
+        .set(column_name, str)  # sets column_name to converted str
         .delete()
-        .update(**kws)     # given display strings as values
         .execute(app, command)  # for anything other than View/Edit/Delete
 
 See the tui_base.py module doc string for how the tui library works.
@@ -166,8 +167,8 @@ class table_screen(tui_base.screen):
             if len(name) > max_len:
                 max_len = len(name)
             self.max_lens.append(max_len)
-            self.field_shareds.append(field_shared(name, 1, begin_x, max_len, self.app, column.alignment,
-                                                   left_placeholder="<", right_placeholder=">"))
+            self.field_shareds.append(field_shared(name, 1, begin_x, max_len, self.app, column.validate,
+                                                   column.alignment, left_placeholder="<", right_placeholder=">"))
             begin_x += max_len + 1
         self.width = begin_x - 1
         self.app.trace(f"table_screen.init({self.table.name=}, {self.width=})")
@@ -316,10 +317,15 @@ class table_screen(tui_base.screen):
                     f_type = read_only_field
                 self.fields.append(f_type(len(self.fields), row.get(column.name), field_shared, lineno))
                 begin_x += max_len + 1
+        self.app.trace()
 
 
 class row_screen(tui_base.screen):
     active_field = None
+    msg_len = 0
+    error_attr = 0x10
+    error_msg_attr = 0x10
+    error_field = None
 
     def __init__(self, row, back=None):
         super().__init__(f"{row.table_name}: {row.human_key()}", back)
@@ -350,6 +356,10 @@ class row_screen(tui_base.screen):
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
         self.app.trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        if self.error_field is not None:
+            self.error_field.highlight()
+            self.clear_message()
+            self.error_field = None
         # run command
         if bstate == tui_base.curses.BUTTON1_CLICKED:
             if y == self.button_y:
@@ -369,6 +379,10 @@ class row_screen(tui_base.screen):
        #    if event_handled(key):
        #        return key
         self.app.trace(f"row_screen.process_key({key=}) {self.active_field=}")
+        if self.error_field is not None:
+            self.error_field.highlight()
+            self.clear_message()
+            self.error_field = None
         if self.active_field is not None:
             key = self.fields[self.active_field].process_key(key)
             if event_handled(key):
@@ -404,7 +418,20 @@ class row_screen(tui_base.screen):
                 self.app.trace(f"Cancel command going back to screen {self.back.title}")
                 return self.back
             case 'Submit':
-                self.app.trace("Submit command not implemented")
+                for field in self.fields:
+                    if field.changed:
+                        try:
+                            field.validate()
+                        except ValueError as exc:
+                            field.highlight(tui_base.curses.color_pair(self.error_attr))
+                            self.message(str(exc), tui_base.curses.color_pair(self.error_attr))
+                            self.error_field = field
+                            return None
+                for field in self.fields:
+                    if field.changed:
+                        self.row.set(field.name, field.text)
+                        field.changed = False
+                self.app.set_changed()
                 return self.back
 
     def draw_body(self):
@@ -421,7 +448,7 @@ class row_screen(tui_base.screen):
             nlines = max(1, math.ceil(value_len * 1.2 / self.width))
             lineno_by_col.append(lineno)
             self.app.trace(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}")
-            shared = field_shared(column.name, nlines, self.begin_x, self.width, self.app)
+            shared = field_shared(column.name, nlines, self.begin_x, self.width, self.app, column.validate)
             if column.can_edit:
                 f_type = editable_field
             else:
@@ -448,6 +475,15 @@ class row_screen(tui_base.screen):
             self.command_buttons_x.append((button_x, button_x + len(command) - 1))
             button_x += 3 + len(command)
 
+    def message(self, msg, attr):
+        self.app.stdscr.addstr(self.button_y + 2, self.button_start_x, msg, attr)
+        self.msg_len = len(msg)
+
+    def clear_message(self):
+        if self.msg_len:
+            self.app.stdscr.addstr(self.button_y + 2, self.button_start_x, ' ' * self.msg_len,
+                                   tui_base.curses.color_pair(self.error_field.default_attr_pair))
+            self.msg_len = 0
 
 
 if __name__ == "__main__":

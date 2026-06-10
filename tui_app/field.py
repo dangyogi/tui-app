@@ -13,13 +13,14 @@ from .tui_base import curses, bstate_str
 class field_shared:
     max_waste = 10
 
-    def __init__(self, name, nlines, begin_x, ncols, app=None, alignment="left",
+    def __init__(self, name, nlines, begin_x, ncols, app=None, validate_fn=None, alignment="left",
                  left_placeholder='[...] ', right_placeholder=' [...]'):
         self.name = name
         self.nlines = nlines
         self.begin_x = begin_x
         self.ncols = ncols
         self.app = app     # only used (shared) by field classes below
+        self.validate_fn = validate_fn
         self.alignment = alignment
         self.left_placeholder = left_placeholder
         self.right_placeholder = right_placeholder
@@ -134,6 +135,7 @@ class field_shared:
 class read_only_field:
     default_attr_pair = 0x01    # attr_pair 0x01 is black on red
     can_edit = False
+    changed = False
 
     def __init__(self, field_num, text, field_shared, begin_y, paint=True, attr_pair=None):
         self.field_num = field_num   # index into fields list
@@ -169,6 +171,9 @@ class read_only_field:
     @property
     def app(self):
         return self.field_shared.app
+
+    def validate(self):
+        return self.field_shared.validate_fn(self.text)
 
     def enclose(self, y, x):
         return False
@@ -272,7 +277,6 @@ class editable_field(read_only_field):
 
     position = None              # text index
     selection_len = 0
-    changed = False
     in_select = False
 
     def get_text(self):
@@ -337,6 +341,13 @@ class editable_field(read_only_field):
                     self.chgat(self.position, self.selection_len, attr)
                 else:
                     self.chgat(self.position + self.selection_len, abs(self.selection_len), attr)
+
+    def highlight(self, attr=None):
+        r'''highlight with no attr undoes prior highlight.
+        '''
+        if attr is None:
+            attr = curses.color_pair(self.default_attr_pair)
+        self.chgat(0, len(self.text), attr)
 
     def set_position(self, index):
         self.field_shared.trace(f"{self.name}.set_position({index=})")
@@ -459,6 +470,7 @@ class editable_field(read_only_field):
 
     def insert(self, text, offset=0):
         self.text = self.text[: offset] + text + self.text[offset:]
+        self.changed = True
         self.paint()
 
    #def replace(self, text, offset=0):
@@ -467,6 +479,7 @@ class editable_field(read_only_field):
 
     def delete(self, nchars, offset=0, insch=''):
         self.text = self.text[: offset] + insch + self.text[offset + nchars:]
+        self.changed = True
         self.paint()
 
     def extend_selection(self, last):
