@@ -203,13 +203,12 @@ class screen:
                     mouse_event = self.process_mouse(curses.getmouse())
                     if isinstance(mouse_event, screen):
                         return mouse_event
+                    if mouse_event == 'REFRESH':
+                        break   # back to self.draw
                     if mouse_event == 'APP_EXIT':
                         return None
                     if mouse_event == 'APP_ABORT':
                         sys.exit(1)
-                    if mouse_event is not None:
-                        id, x, y, z, bstate = mouse_event
-                        # FIX: anything else to do here besides ignore it?
                 elif key == 'KEY_RESIZE':
                     curses.update_lines_cols()
                     break  # from inner while loop ==> redraw screen
@@ -217,6 +216,8 @@ class screen:
                     key = self.process_key(key)
                     if isinstance(key, screen):
                         return key
+                    if key == 'REFRESH':
+                        break   # back to self.draw
                     if key == 'APP_EXIT':
                         return None
                     if key == 'APP_ABORT':

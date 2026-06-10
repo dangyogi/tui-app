@@ -9,20 +9,21 @@ It builds on three classes that you must write with the following interfaces:
     table:
         .name
         .columns
-        .popup_commands          # list of strings, tui will add Back and Abort/Exit to the end of these.
+        .screen_popup_commands   # list of strings, tui will add Back and Abort/Exit to the end of these.
         .get_rows(app, **select) # returns a list of selected row objects.
                                  # select keys are column_name (__eq assumed), or column_name__<lt|le|eq|ne|ge|gt>
                                  # results of select keys are and-ed.
                                  # This library does not support paging to the data.
-        .execute(app, command)   # for anything other than table_names or Abort/Exit
+        .execute(app, command)   # for anything on screen popup other than table_names or Back/Abort/Exit
 
     column:
         .name
-        .abbr         # abbr name to save space on the screen.  May be None.
-        .min_width    # may be None, used for table view to fit all of the columns on the screen
-        .alignment    # "left" or "right"
-        .can_edit     # True/False
-        .validate(s)  # raises ValueError if s not valid
+        .abbr                    # abbr name to save space on the screen.  May be None.
+        .min_width               # may be None, used for table view to fit all of the columns on the screen
+        .alignment               # "left" or "right"
+        .can_edit                # True/False
+        .validate(s)             # raises ValueError if s not valid
+        .column_attr_pair(row)   # returns attr_pair for column, or None for default attr
 
     row:
         .table_name
@@ -31,7 +32,9 @@ It builds on three classes that you must write with the following interfaces:
         .get(column_name)       # returns string to display
         .set(column_name, str)  # sets column_name to converted str
         .delete()
-        .execute(app, command)  # for anything other than View/Edit/Delete
+        .row_popup_commands
+        .row_screen_commands
+        .execute(app, command)  # for commands on row popup
 
 See the tui_base.py module doc string for how the tui library works.
 '''
@@ -46,7 +49,7 @@ from .field import field_shared, read_only_field, editable_field
 def event_handled(event):
     r'''Used by both process_mouse and process_key.
     '''
-    return event is None or event in ('APP_EXIT', 'APP_ABORT') or isinstance(event, tui_base.screen)
+    return event is None or event in ('REFRESH', 'APP_EXIT', 'APP_ABORT') or isinstance(event, tui_base.screen)
 
 def start(tables, top_screen=None):
     app_instance = app(tables, top_screen)
@@ -298,7 +301,8 @@ class table_screen(tui_base.screen):
                     f_type = editable_field
                 else:
                     f_type = read_only_field
-                self.fields.append(f_type(len(self.fields), row.get(column.name), field_shared, lineno))
+                self.fields.append(f_type(len(self.fields), row.get(column.name), field_shared, lineno,
+                                          attr_pair=column.column_attr_pair(row)))
                 begin_x += max_len + 1
         self.app.trace()
 
@@ -436,7 +440,8 @@ class row_screen(tui_base.screen):
                 f_type = editable_field
             else:
                 f_type = read_only_field
-            self.fields.append(f_type(len(self.fields), value, shared, lineno))
+            self.fields.append(f_type(len(self.fields), value, shared, lineno,
+                                      attr_pair=column.column_attr_pair(self.row)))
             lineno += nlines
         self.active_field = None
 
