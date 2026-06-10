@@ -450,7 +450,7 @@ class editable_field(read_only_field):
                     self.set_position(self.position - 1)
                 case 'KEY_RIGHT' if self.position < len(self.text):
                     self.field_shared.trace(f"{self.name}.process_key({key=}): "
-                                            f"{self.position=}, {y=}, {new_x=}")
+                                            f"{self.position=}, {len(self.text)=}")
                     self.set_position(self.position + 1)
                 case _:
                     self.field_shared.trace(f"{self.name}.process_key({key=}): unknown key")
@@ -476,9 +476,9 @@ class editable_field(read_only_field):
         self.field_shared.trace(f"{self.name}.extend_selection({last=}): "
                                 f"{self.position=}, {self.selection_len=}")
 
-    def delete_selection(self, insch=None):
+    def delete_selection(self, insch=''):
         if not self.selection_len:
-            if insch is not None:
+            if insch:
                 self.insert(insch, self.position)
                 self.set_position(self.position + 1)
         else:
