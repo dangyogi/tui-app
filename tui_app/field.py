@@ -342,11 +342,12 @@ class editable_field(read_only_field):
                 else:
                     self.chgat(self.position + self.selection_len, abs(self.selection_len), attr)
 
+    # FIX: not called
     def highlight(self, attr=None):
         r'''highlight with no attr undoes prior highlight.
         '''
         if attr is None:
-            attr = curses.color_pair(self.default_attr_pair)
+            attr = curses.color_pair(self.attr_pair)
         self.chgat(0, len(self.text), attr)
 
     def set_position(self, index):
@@ -371,9 +372,10 @@ class editable_field(read_only_field):
         else:
             self.field_shared.trace(f"{self.name}.set_selection({start=}, {end=})")
             self.set_attrs(reset=True)
-            self.set_position(start)
+            self.position = start
             self.selection_len = length
             self.set_attrs()
+            self.app.screen.activate_field(self.field_num)
 
     def process_mouse(self, mouse_event):
         r'''Caller ensures self.enclose on mouse_event
