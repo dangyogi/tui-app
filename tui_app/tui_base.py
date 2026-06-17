@@ -167,6 +167,11 @@ def bstate_str(bstate):
         return pre + 'REPORT_MOUSE_POSITION'
     return f"<unknown {hex(bstate)}>"
 
+def event_handled(event):
+    r'''Used by both process_mouse and process_key.
+    '''
+    return event is None or event in ('REFRESH', 'APP_EXIT', 'APP_ABORT') or isinstance(event, screen)
+
 
 class screen:
     r'''Represents a full screen to tui.
