@@ -18,6 +18,7 @@ dependencies = []
 repository = "https://github.com/dangyogi/tui-app.git"
 
 [project.scripts]
+color-display = "tui_app.color_display:run"
 
 [tool.setuptools.package-dir]
 tui_app = "tui_app"

@@ -5,7 +5,7 @@ r'''Shows the 256 different color pair colors.
 
 import time
 import curses
-import tui_base
+from . import tui_base
 
 def doit(stdscr):
     tui_base.init_screen(stdscr)
@@ -35,7 +35,9 @@ def paint(stdscr=None):
         if stdscr is None:
             print()
 
+def run():
+    global Trace_file
+    with open('color_display.txt', 'wt') as Trace_file:
+        curses.wrapper(doit)
+        #paint()
 
-with open('color_display.txt', 'wt') as Trace_file:
-    curses.wrapper(doit)
-    #paint()
