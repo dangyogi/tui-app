@@ -2,16 +2,25 @@
 
 import math
 
+from csv_app import action
 from . import tui_base
 from .field import field_shared, read_only_field
+
+
+class action_field(read_only_field):
+    def __init__(self, action, field_shared, begin_y, attr_pair):
+        super().__init__(None, action.name, field_shared, begin_y, attr_pair=attr_pair)
+        self.action = action
+
+    def enclose(self, y, x):
+        return y == self.begin_y and self.begin_x <= x < self.begin_x + len(self.text)
 
 
 class menu_screen(tui_base.screen):
     active_field = None
     msg_len = 0
-    error_attr = 0x10
-    error_msg_attr = 0x10
-    error_field = None
+    error_pair = 0x01
+    default_pair = 0x00
 
     task_pair     = 0x0   # standard white on black
     cant_run_pair = 0x10  # red text
@@ -39,88 +48,80 @@ class menu_screen(tui_base.screen):
                            for task_num_width, step_num_width, name_width in self.widths]
 
     def init(self):
+        curses = tui_base.curses
         self.app.trace(f"menu_screen.init({self.title}) {self.num_columns=}, {self.widths=}, {self.col_widths=}")
+        self.app.trace(f"    {hex(curses.color_pair(0x01))=}, {hex(curses.A_REVERSE)=}")
 
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
         self.app.trace(f"menu_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
-        if self.error_field is not None:
-            self.error_field.highlight()
-            self.clear_message()
-            self.error_field = None
-        # run command
-        if bstate == tui_base.curses.BUTTON1_CLICKED:
-            if y == self.button_y:
-                # check buttons
-                for i, (button_x_first, button_x_last) in enumerate(self.command_buttons_x):
-                    if button_x_first <= x <= button_x_last:
-                        return self.execute(self.menu_screen_commands[i])
-        # run this past the fields
-        for field in self.fields:
+
+        # where am I?
+        for index in range(len(self.fields)):
+            field = self.fields[index]
             if field.enclose(y, x):
-                return field.process_mouse(mouse_event)
+                break
+        else:
+            return mouse_event
+
+        self.app.trace(f"menu_screen.process_mouse({y=}, {x=}) in field {index=}, {field.name=}")
+        match bstate:
+            case tui_base.curses.BUTTON1_CLICKED if field.action.can_run():
+                self.activate_field(index)
+                return None
+            case tui_base.curses.BUTTON1_DOUBLE_CLICKED if field.action.can_run():
+                self.activate_field(index)
+                return self.execute(field.action)
         return mouse_event
 
     def process_key(self, key):
-       #if self.popup is not None:
-       #    key = self.popup.process_key(key)
-       #    if tui_base.event_handled(key):
-       #        return key
         self.app.trace(f"menu_screen.process_key({key=}) {self.active_field=}")
-        if self.error_field is not None:
-            self.error_field.highlight()
-            self.clear_message()
-            self.error_field = None
-        if self.active_field is not None:
-            key = self.fields[self.active_field].process_key(key)
-            if tui_base.event_handled(key):
-                return key
-        if key == '\t':
+        if key == 'KEY_DOWN':
             active_field = self.active_field
             if active_field is None:
                 offset = 0
             else:
                 offset = active_field + 1
             for i in range(len(self.fields)):
-                active_field = (offset + i) % len(self.fields)
-                if self.fields[active_field].can_edit:
-                    self.activate_field(active_field)
+                field_index = (offset + i) % len(self.fields)
+                if self.fields[field_index].action.can_run():
+                    self.activate_field(field_index)
                     return None
-        elif key == 'KEY_BTAB':
+        elif key == 'KEY_UP':
             active_field = self.active_field
             if active_field is None:
-                offset = len(self.fields)
+                offset = len(self.fields) - 1
             else:
                 offset = active_field - 1
             for i in range(len(self.fields)):
-                active_field = (offset - i) % len(self.fields)
-                if self.fields[active_field].can_edit:
-                    self.activate_field(active_field)
+                field_index = (offset - i) % len(self.fields)
+                if self.fields[field_index].action.can_run():
+                    self.activate_field(field_index)
                     return None
+        elif key == 'KEY_ENTER' or key == '\n' or key == ' ':
+            if self.active_field is not None:
+                return self.execute(self.fields[self.active_field].action)
+        elif key == 'r':
+            action.reset()
+            return 'REFRESH'
         return key
 
-    def execute(self, command):
-        self.app.trace(f"menu_screen.execute({command=})")
-        match command:
-            case 'Cancel':
-                self.app.trace(f"Cancel command going back to screen {self.back.title}")
-                return self.back
-            case 'Submit':
-                for field in self.fields:
-                    if field.changed:
-                        try:
-                            field.validate()
-                        except ValueError as exc:
-                            field.highlight(tui_base.curses.color_pair(self.error_attr))
-                            self.message(str(exc), tui_base.curses.color_pair(self.error_attr))
-                            self.error_field = field
-                            return None
-                for field in self.fields:
-                    if field.changed:
-                        self.row.set(field.name, field.text)
-                        field.changed = False
-                self.app.set_changed()
-                return self.back
+    def activate_field(self, index):
+        if self.active_field is not None:
+            field = self.fields[self.active_field]
+            field.reverse_attr(0, len(field.text))
+        self.active_field = index
+        field = self.fields[self.active_field]
+        field.reverse_attr(0, len(field.text))
+
+    def execute(self, action):
+        self.app.trace(f"menu_screen.execute({action.name=})")
+        self.clear_message()
+        error = action.run(self.app)
+        if error is None:
+            return 'REFRESH'
+        self.message(error, tui_base.curses.color_pair(self.error_pair))
+        return None
 
     def draw_body(self):
         self.app.trace(f"draw_body(): {self.num_columns=}, {self.col_widths=}, {self.widths=}")
@@ -136,11 +137,13 @@ class menu_screen(tui_base.screen):
         begin_y = 2
         lineno = begin_y
         self.max_y = 0
+        last_y = []   # per column
         widths = self.widths[column - 1]
         for action in self.actions.values():
             if action.column_break:
                 if lineno > self.max_y:
                     self.max_y = lineno
+                last_y.append(lineno)
                 column += 1
                 lineno = begin_y
                 x = self.begin_x[column - 1]
@@ -161,12 +164,29 @@ class menu_screen(tui_base.screen):
                 attr_pair = self.may_run_pair
             else:
                 attr_pair = self.must_run_pair
-            self.fields.append(read_only_field(len(self.fields), action.name, shared, lineno, attr_pair=attr_pair))
+            self.fields.append(action_field(action, shared, lineno, attr_pair))
             lineno += nlines
         if lineno > self.max_y:
             self.max_y = lineno
-        self.app.trace(f"{self.max_y=}")
-        self.active_field = None  # FIX: Still needed??
+        last_y.append(lineno)
+        self.app.trace(f"{self.max_y=}, {last_y=}")
+        self.active_field = None
+
+        # write legend:
+        if column > 1 and last_y[-1] + 7 <= self.max_y:
+            # place legend under last column
+            y = self.max_y - 5
+            x += widths[0] + 1 + widths[1] + 1
+        else:
+            # place legend in lower right corner
+            y = self.nlines - 6
+            x = self.cols - 10
+        curses = tui_base.curses
+        self.app.stdscr.addstr(y, x, "Legend:", curses.A_UNDERLINE)
+        self.app.stdscr.addstr(y + 1, x, "task", curses.color_pair(self.task_pair))
+        self.app.stdscr.addstr(y + 2, x, "must run", curses.color_pair(self.must_run_pair))
+        self.app.stdscr.addstr(y + 3, x, "may rerun", curses.color_pair(self.may_run_pair))
+        self.app.stdscr.addstr(y + 4, x, "can't run", curses.color_pair(self.cant_run_pair))
 
     def message(self, msg, attr):
         x = (self.cols - len(msg)) // 2  # center message
@@ -177,6 +197,6 @@ class menu_screen(tui_base.screen):
         if self.msg_len:
             x = (self.cols - self.msg_len) // 2  # center message
             self.app.stdscr.addstr(self.max_y + 2, x, ' ' * self.msg_len,
-                                   tui_base.curses.color_pair(self.error_field.default_attr_pair))
+                                   tui_base.curses.color_pair(self.default_pair))
             self.msg_len = 0
 

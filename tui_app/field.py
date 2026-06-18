@@ -204,6 +204,21 @@ class read_only_field:
         for y, x, num in self.gen_locations(start, start + max(1, length)):
             stdscr.chgat(y, x, num, attr)
 
+    def reverse_attr(self, start, length):
+        r'''This takes indexes into self.text.
+
+        Toggles curses.A_REVERSE
+        '''
+        stdscr = self.app.stdscr
+        attr = None
+        for y, x, num in self.gen_locations(start, start + max(1, length)):
+            if attr is None:
+                current_attr = stdscr.inch(y, x)
+                new_attr = current_attr ^ curses.A_REVERSE
+                self.field_shared.trace(f"{self.name}.reverse_attr({start=}, {length=}): {hex(current_attr)=}, "
+                                        f"{hex(new_attr)=}, {hex(curses.A_REVERSE)=}")
+            stdscr.chgat(y, x, num, new_attr)
+
     def gen_locations(self, start, end):
         r'''This takes indexes into self.text and generates all y, x, num values that are visible.
         '''
