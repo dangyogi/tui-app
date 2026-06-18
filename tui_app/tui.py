@@ -56,7 +56,7 @@ class app:
     def __init__(self, tables, top_screen=None):
         self.tables = tables
         if top_screen is None:
-            self.top_screen = list(tables.keys())[0]
+            self.top_screen = table_screen(self.tables[list(tables.keys())[0]])
         else:
             self.top_screen = top_screen
         self.changed = False
@@ -68,7 +68,7 @@ class app:
     def run(self, stdscr):   # called by curses.wrapper in start fn
         self.stdscr = stdscr
         tui_base.init_screen(stdscr)
-        self.screen = table_screen(self.tables[self.top_screen])
+        self.screen = self.top_screen
         with open("trace.txt", "wt") as self.trace_file:
             while self.screen is not None:
                 next_screen = self.screen.run(self)
