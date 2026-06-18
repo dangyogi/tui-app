@@ -153,7 +153,7 @@ class menu_screen(tui_base.screen):
                 w += 1 + widths[1]
             self.app.stdscr.addstr(lineno, x + w - len(action.number), f"{action.number}")
             shared = field_shared(action.number, nlines, x + w + 1, widths[2], self.app)
-            if action.task is None:
+            if action.is_task:
                 attr_pair = self.task_pair
             elif not action.can_run():
                 attr_pair = self.cant_run_pair
