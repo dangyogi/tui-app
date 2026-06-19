@@ -294,6 +294,10 @@ class editable_field(read_only_field):
     selection_len = 0
     in_select = False
 
+    def __init__(self, field_num, text, field_shared, begin_y, paint=True, attr_pair=None, callback=None):
+        super().__init__(field_num, text, field_shared, begin_y, paint=paint, attr_pair=attr_pair)
+        self.callback = callback
+
     def get_text(self):
         self.field_shared.trace(f"{self.name}.get_text() -> {self.text!r}")
         return self.text
@@ -438,6 +442,9 @@ class editable_field(read_only_field):
         return None
 
     def process_key(self, key):
+        self.field_shared.trace(f"{self.name}.process_key({key=}): {self.callback=}")
+        if (key == 'KEY_ENTER' or key == '\n') and self.callback is not None:
+            return self.callback(self.get_text())
         if self.position is None:
             self.field_shared.trace(f"{self.name}.process_key({key=}): position not set")
             return key

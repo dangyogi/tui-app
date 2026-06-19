@@ -17,7 +17,7 @@ class row_screen(tui_base.screen):
         super().__init__(f"{row.table_name}: {row.human_key()}", back)
         self.row = row
         self.columns = self.row.columns
-        self.row_screen_commands = list(row.row_screen_commands) + ['Cancel', 'Submit']
+        self.row_screen_commands = list(row.row_screen_commands) + ['Cancel', 'Update', 'Submit']
         self.fields = ()
 
     def init(self):
@@ -103,22 +103,28 @@ class row_screen(tui_base.screen):
             case 'Cancel':
                 self.app.trace(f"Cancel command going back to screen {self.back.title}")
                 return self.back
+            case 'Update':
+                self.update()
+                return 'REFRESH'
             case 'Submit':
-                for field in self.fields:
-                    if field.changed:
-                        try:
-                            field.validate()
-                        except ValueError as exc:
-                            field.highlight(tui_base.curses.color_pair(self.error_attr))
-                            self.message(str(exc), tui_base.curses.color_pair(self.error_attr))
-                            self.error_field = field
-                            return None
-                for field in self.fields:
-                    if field.changed:
-                        self.row.set(field.name, field.text)
-                        field.changed = False
-                self.app.set_changed()
+                self.update()
                 return self.back
+
+    def update(self):
+        for field in self.fields:
+            if field.changed:
+                try:
+                    field.validate()
+                except ValueError as exc:
+                    field.highlight(tui_base.curses.color_pair(self.error_attr))
+                    self.message(str(exc), tui_base.curses.color_pair(self.error_attr))
+                    self.error_field = field
+                    return None
+        for field in self.fields:
+            if field.changed:
+                self.row.set(field.name, field.text)
+                field.changed = False
+        self.app.set_changed()
 
     def draw_body(self):
         self.app.trace(f"draw_body(): {len(self.columns)=}")

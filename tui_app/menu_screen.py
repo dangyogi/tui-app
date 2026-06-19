@@ -4,7 +4,7 @@ import math
 
 from csv_app import action
 from . import tui_base
-from .field import field_shared, read_only_field
+from .field import field_shared, read_only_field, editable_field
 
 
 class action_field(read_only_field):
@@ -18,7 +18,9 @@ class action_field(read_only_field):
 
 class menu_screen(tui_base.screen):
     active_field = None
-    msg_len = 0
+    message = None
+    question = None
+    answer = None
     error_pair = 0x01
     default_pair = 0x00
 
@@ -56,6 +58,9 @@ class menu_screen(tui_base.screen):
         _, x, y, _, bstate = mouse_event
         self.app.trace(f"menu_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
 
+        if self.answer is not None and self.answer.enclose(y, x):
+            return self.answer.process_mouse(mouse_event)
+
         # where am I?
         for index in range(len(self.fields)):
             field = self.fields[index]
@@ -68,14 +73,20 @@ class menu_screen(tui_base.screen):
         match bstate:
             case tui_base.curses.BUTTON1_CLICKED if field.action.can_run():
                 self.activate_field(index)
+                self.clear_message()
                 return None
             case tui_base.curses.BUTTON1_DOUBLE_CLICKED if field.action.can_run():
                 self.activate_field(index)
+                self.clear_message()
                 return self.execute(field.action)
         return mouse_event
 
     def process_key(self, key):
         self.app.trace(f"menu_screen.process_key({key=}) {self.active_field=}")
+        if self.answer is not None:
+            ans = self.answer.process_key(key)
+            if tui_base.event_handled(ans):
+                return ans
         if key == 'KEY_DOWN':
             active_field = self.active_field
             if active_field is None:
@@ -86,6 +97,7 @@ class menu_screen(tui_base.screen):
                 field_index = (offset + i) % len(self.fields)
                 if self.fields[field_index].action.can_run():
                     self.activate_field(field_index)
+                    self.clear_message()
                     return None
         elif key == 'KEY_UP':
             active_field = self.active_field
@@ -97,11 +109,14 @@ class menu_screen(tui_base.screen):
                 field_index = (offset - i) % len(self.fields)
                 if self.fields[field_index].action.can_run():
                     self.activate_field(field_index)
+                    self.clear_message()
                     return None
         elif key == 'KEY_ENTER' or key == '\n' or key == ' ':
             if self.active_field is not None:
+                self.clear_message()
                 return self.execute(self.fields[self.active_field].action)
         elif key == 'r':
+            self.clear_message()
             action.reset()
             return 'REFRESH'
         return key
@@ -116,12 +131,7 @@ class menu_screen(tui_base.screen):
 
     def execute(self, action):
         self.app.trace(f"menu_screen.execute({action.name=})")
-        self.clear_message()
-        error = action.run(self.app)
-        if error is None:
-            return 'REFRESH'
-        self.message(error, tui_base.curses.color_pair(self.error_pair))
-        return None
+        return action.execute(self.app)
 
     def draw_body(self):
         self.app.trace(f"draw_body(): {self.num_columns=}, {self.col_widths=}, {self.widths=}")
@@ -173,14 +183,19 @@ class menu_screen(tui_base.screen):
         self.active_field = None
 
         # write legend:
-        if column > 1 and last_y[-1] + 7 <= self.max_y:
-            # place legend under last column
+        if column == 1:
+            # place legend to the lower right of column
+            x += self.col_widths[0]
+            x += (self.cols - x - 9) // 3
             y = self.max_y - 5
-            x += widths[0] + 1 + widths[1] + 1
         else:
-            # place legend in lower right corner
-            y = self.nlines - 6
-            x = self.cols - 10
+            # place legend under last column
+            x += widths[0] + 1 + widths[1] + 1
+            if last_y[-1] + 7 <= self.max_y:
+                y = self.max_y - 5
+            else:
+                y = last_y[-1] + 1
+                self.max_y = y + 5
         curses = tui_base.curses
         self.app.stdscr.addstr(y, x, "Legend:", curses.A_UNDERLINE)
         self.app.stdscr.addstr(y + 1, x, "task", curses.color_pair(self.task_pair))
@@ -188,15 +203,62 @@ class menu_screen(tui_base.screen):
         self.app.stdscr.addstr(y + 3, x, "may rerun", curses.color_pair(self.may_run_pair))
         self.app.stdscr.addstr(y + 4, x, "can't run", curses.color_pair(self.cant_run_pair))
 
-    def message(self, msg, attr):
+        # write message:
+        if self.message is not None:
+            self.show_message(self.message, self.message_attr)
+
+        # write question:
+        if self.question is not None:
+            entry_len = 5
+            y = self.max_y + 4
+            x = (self.cols - len(self.question) - entry_len - 1) // 2  # center question/response
+            self.app.stdscr.addstr(y, x, self.question)
+            self.answer.paint()
+
+    def show_message(self, msg, attr):
         x = (self.cols - len(msg)) // 2  # center message
         self.app.stdscr.addstr(self.max_y + 2, x, msg, attr)
-        self.msg_len = len(msg)
+        self.message = msg
+        self.message_attr = attr
+
+    def show_error(self, msg):
+        self.show_message(msg, tui_base.curses.color_pair(self.error_pair))
 
     def clear_message(self):
-        if self.msg_len:
-            x = (self.cols - self.msg_len) // 2  # center message
-            self.app.stdscr.addstr(self.max_y + 2, x, ' ' * self.msg_len,
-                                   tui_base.curses.color_pair(self.default_pair))
-            self.msg_len = 0
+        if self.message is not None:
+            x = (self.cols - len(self.message)) // 2  # center message
+            self.app.stdscr.addstr(self.max_y + 2, x, self.message, tui_base.curses.A_INVIS)
+            self.message = None
+
+    def ask_question(self, question, callback, default=''):
+        self.clear_question()
+        entry_len = 5
+        y = self.max_y + 4
+        x = (self.cols - len(question) - entry_len - 1) // 2  # center question/response
+        self.app.stdscr.addstr(y, x, question)
+        self.answer = editable_field(1, default,
+                                     field_shared("answer", 1, x + len(question) + 1, entry_len, self.app,
+                                                  validate_fn=int,
+                                                 #alignment="right",
+                                                 ),
+                                     y,
+                                     callback=self.run_callback)
+        self.question = question
+        self.callback = callback
+
+    def run_callback(self, s):
+        callback = self.callback
+        self.clear_question()  # sets self.callback to None
+        return callback(s)
+
+    def clear_question(self):
+        if self.question is not None:
+            entry_len = 5
+            y = self.max_y + 4
+            x = (self.cols - len(self.question) - entry_len - 1) // 2  # center question/response
+            self.app.stdscr.addstr(y, x, self.question, tui_base.curses.A_INVIS) 
+            self.app.stdscr.addstr(y, x + len(self.question) + 1, ' ' * entry_len) 
+            self.question = None
+            self.answer = None
+            self.callback = None
 

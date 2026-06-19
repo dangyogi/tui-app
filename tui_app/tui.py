@@ -85,8 +85,17 @@ class app:
             self.changed = True
             self.draw_changed_banner()
 
-    def draw_changed_banner(self):
-        self.stdscr.addstr(0, 6, "Changed", tui_base.curses.color_pair(0xb1))  # was 0xf1
+    def reset_changed(self):
+        if self.changed:
+            self.changed = False
+            self.draw_changed_banner(clear=True)
+
+    def draw_changed_banner(self, clear=False):
+        if clear:
+            attr = tui_base.curses.A_INVIS
+        else:
+            attr = tui_base.curses.color_pair(0xb1)  # was 0xf1
+        self.stdscr.addstr(0, 6, "Changed", attr)
 
     def execute(self, command):
         r'''Called for screen popup.
