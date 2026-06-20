@@ -9,16 +9,30 @@ from .field import field_shared, read_only_field, editable_field
 class row_screen(tui_base.screen):
     active_field = None
     msg_len = 0
+    default_attr = 0x00
     error_attr = 0x10
     error_msg_attr = 0x10
     error_field = None
 
-    def __init__(self, row, back=None):
+    def __init__(self, row, back=None, global_validate=None, callback=None):
+        r'''
+            global_validate is a function that is called on update after individual
+            field validates have been done (and all passed).  This function takes
+            this row_screen as its single argument, and returns an error message (to be
+            displayed), if there was an error; or None if no errors.
+
+            callback is a function that is called after a succesful Submit.  It takes no
+            arguments and returns None.
+        '''
+
         super().__init__(f"{row.table_name}: {row.human_key()}", back)
         self.row = row
         self.columns = self.row.columns
-        self.row_screen_commands = list(row.row_screen_commands) + ['Cancel', 'Update', 'Submit']
+        self.row_screen_commands = list(row.row_screen_commands) \
+                                 + ['Cancel', 'Update', 'Submit']
         self.fields = ()
+        self.global_validate = global_validate
+        self.callback = callback
 
     def init(self):
         self.max_col_name_len = 0
@@ -44,8 +58,8 @@ class row_screen(tui_base.screen):
         self.app.trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if self.error_field is not None:
             self.error_field.highlight()
-            self.clear_message()
             self.error_field = None
+        self.clear_message()
         # run command
         if bstate == tui_base.curses.BUTTON1_CLICKED:
             if y == self.button_y:
@@ -67,8 +81,8 @@ class row_screen(tui_base.screen):
         self.app.trace(f"row_screen.process_key({key=}) {self.active_field=}")
         if self.error_field is not None:
             self.error_field.highlight()
-            self.clear_message()
             self.error_field = None
+        self.clear_message()
         if self.active_field is not None:
             key = self.fields[self.active_field].process_key(key)
             if tui_base.event_handled(key):
@@ -104,27 +118,41 @@ class row_screen(tui_base.screen):
                 self.app.trace(f"Cancel command going back to screen {self.back.title}")
                 return self.back
             case 'Update':
-                self.update()
-                return 'REFRESH'
+                if self.update():
+                    return 'REFRESH'
             case 'Submit':
-                self.update()
-                return self.back
+                if self.update():
+                    if self.callback is not None:
+                        self.callback()
+                    return self.back
 
     def update(self):
+        r'''Returns True if all validation passes.
+
+        Else dislays error message.
+
+        Also updates self.row if all validation passes.
+        '''
         for field in self.fields:
             if field.changed:
                 try:
                     field.validate()
                 except ValueError as exc:
                     field.highlight(tui_base.curses.color_pair(self.error_attr))
-                    self.message(str(exc), tui_base.curses.color_pair(self.error_attr))
+                    self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
                     self.error_field = field
-                    return None
+                    return False
+        if self.global_validate is not None:
+            msg = self.global_validate(self)
+            if msg:
+                self.message(msg, tui_base.curses.color_pair(self.error_msg_attr))
+                return False
         for field in self.fields:
             if field.changed:
                 self.row.set(field.name, field.text)
                 field.changed = False
         self.app.set_changed()
+        return True
 
     def draw_body(self):
         self.app.trace(f"draw_body(): {len(self.columns)=}")
@@ -177,7 +205,11 @@ class row_screen(tui_base.screen):
     def clear_message(self):
         if self.msg_len:
             x = (self.cols - self.msg_len) // 2  # center message
+            if self.error_field is not None:
+                attr_pair = self.error_field.default_attr_pair
+            else:
+                attr_pair = self.default_attr
             self.app.stdscr.addstr(self.button_y + 2, x, ' ' * self.msg_len,
-                                   tui_base.curses.color_pair(self.error_field.default_attr_pair))
+                                   tui_base.curses.color_pair(attr_pair))
             self.msg_len = 0
 
