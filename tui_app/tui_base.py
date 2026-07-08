@@ -5,7 +5,7 @@ Life of a tui app:
     - tui.start is called by the user app that is using the tui library.
     - tui.start creates a tui.app instance and has curses.wrapper call its run method (which is passed stdscr)
     - curses is now initialized and available as tui_base.curses
-    - app.run stores stdscr as self.stdscr, opens its self.trace_file and goes from one screen to the next by
+    - app.run stores stdscr as self.stdscr and goes from one screen to the next by
       saving it in self.screen, then calling calling screen.run, which returns the next screen (or None to exit
       the app).
     - screen.run saves app as self.app, call screen.init and then calls screen.draw and processes input, repeating
@@ -15,7 +15,6 @@ Where to find things:
     - app          is screen.app
     - curses       is tui_base.curses
     - stdscr       is app.stdscr
-    - trace_file   is app.trace_file
     - screen       is app.screen
     - changed flag is app.changed, set with app.set_changed()
 
@@ -104,9 +103,10 @@ colors:
 import sys
 import curses
 import curses.ascii
+from csv_app.trace import trace
 
 
-__all__ = "curses init_screen bstate_str screen popup".split()
+__all__ = "curses init_screen bstate_str screen popup trace".split()
 
 def init_colors():
     r'''Loads colors as follows:
@@ -250,7 +250,7 @@ class screen:
         '''
         self.lines = curses.LINES
         self.cols = curses.COLS
-        self.app.trace(f"draw(): {self.lines=}, {self.cols=}")
+        trace(f"draw(): {self.lines=}, {self.cols=}")
         if self.width is None:
             title_x = (self.cols - len(self.title)) // 2   # center title
         else:
@@ -283,7 +283,7 @@ class popup:
         self.height = 2 + len(commands)                                             # includes box
         self.width = 4 + max(len(name), max(len(command) for command in commands))  # includes box and inside spacing
 
-        screen.app.trace(f"popup.__init__({name=}, {commands=}, {begin_y=}, {begin_x=})")
+        trace(f"popup.__init__({name=}, {commands=}, {begin_y=}, {begin_x=})")
 
         assert 1 <= begin_y, f"popup.__init__({name=}) {begin_y=} < 1"
         self.saved_height = self.height + 1
@@ -312,7 +312,7 @@ class popup:
         else:
             self.saved_width = self.width + 2
 
-        screen.app.trace(f"popup.__init__: {self.begin_y=}, {self.begin_x=}, "
+        trace(f"popup.__init__: {self.begin_y=}, {self.begin_x=}, "
               f"{self.saved_y=}, {self.saved_x=}, {self.height=}, {self.width=})")
 
         self.saved_chars = [[screen.app.stdscr.inch(line, col)
@@ -335,7 +335,7 @@ class popup:
         self.select(1)
 
     def process_key(self, key):
-        self.screen.app.trace(f"popup.process_key({key=})")
+        trace(f"popup.process_key({key=})")
         if key == 'KEY_DOWN':
             if self.selection + 1 < self.height - 1:
                 self.select(self.selection + 1)
@@ -351,7 +351,7 @@ class popup:
 
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
-        self.screen.app.trace(f"popup.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})")
+        trace(f"popup.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})")
         if not self.enclose(y, x) or not (self.begin_y < y < self.begin_y + self.height - 1):
             return mouse_event
         if bstate == curses.BUTTON1_CLICKED:
@@ -363,9 +363,9 @@ class popup:
             return mouse_event
 
     def execute(self):
-        self.screen.app.trace(f"popup.execute(): {self.selection=}")
+        trace(f"popup.execute(): {self.selection=}")
         command = self.commands[self.selection - 1]
-        self.screen.app.trace(f"popup.execute(): {command=}")
+        trace(f"popup.execute(): {command=}")
         self.delete()
         return self.cmd_fn(command)
 
@@ -377,7 +377,7 @@ class popup:
 
         So first command is 1, last command is self.height - 2
         '''
-        self.screen.app.trace(f"popup.select({y=})")
+        trace(f"popup.select({y=})")
         assert 0 < y < self.height - 1, \
            f"popup.select: {y=} out of range {1}-{self.height - 2}"
         if self.selection is not None:
@@ -387,7 +387,7 @@ class popup:
         self.subwin.noutrefresh()
 
     def delete(self):
-        self.screen.app.trace(f"popup.delete()")
+        trace(f"popup.delete()")
         if self.subwin is not None:
             del self.subwin
             self.subwin = None

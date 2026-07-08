@@ -39,6 +39,7 @@ It builds on three classes that you must write with the following interfaces:
 See the tui_base.py module doc string for how the tui library works.
 '''
 
+from csv_app.trace import trace
 from . import tui_base
 from .table_screen import table_screen
 
@@ -51,7 +52,6 @@ class app:
     r'''Created and run by `start` fn.
     '''
     screen = None
-    trace_file = None
 
     def __init__(self, tables, top_screen=None):
         self.tables = tables
@@ -61,19 +61,14 @@ class app:
             self.top_screen = top_screen
         self.changed = False
 
-    def trace(self, *objects, sep=' ', end='\n', flush=False):
-        if self.trace_file is not None:
-            print(*objects, sep=sep, end=end, file=self.trace_file, flush=flush)
-
     def run(self, stdscr):   # called by curses.wrapper in start fn
         self.stdscr = stdscr
         tui_base.init_screen(stdscr)
         self.screen = self.top_screen
-        with open("trace.txt", "wt") as self.trace_file:
-            while self.screen is not None:
-                next_screen = self.screen.run(self)
-                self.screen.delete()
-                self.screen = next_screen
+        while self.screen is not None:
+            next_screen = self.screen.run(self)
+            self.screen.delete()
+            self.screen = next_screen
 
     def draw_changed(self, title_x):
         self.title_x = title_x
@@ -102,20 +97,20 @@ class app:
 
         Calls self.screen.table.execute if it does not recognize the command.
         '''
-        self.trace(f"app.execute({command=})")
+        trace(f"app.execute({command=})")
         if command in self.tables:
-            self.trace("command is table, returning table_screen")
+            trace("command is table, returning table_screen")
             return table_screen(self.tables[command], self.screen)
         match command:
             case 'Back':
                 return self.screen.back
             case 'Exit':
-                self.trace(f"command is {command!r}, returning 'APP_EXIT'")
+                trace(f"command is {command!r}, returning 'APP_EXIT'")
                 return 'APP_EXIT'
             case 'Abort':
-                self.trace(f"command is {command!r}, returning 'APP_ABORT'")
+                trace(f"command is {command!r}, returning 'APP_ABORT'")
                 return 'APP_ABORT'
-        self.trace(f"app.execute({command=}): forwarding to screen")
+        trace(f"app.execute({command=}): forwarding to screen")
         return self.screen.table.execute(self, command)
 
 

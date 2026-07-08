@@ -2,6 +2,7 @@
 
 import math
 
+from csv_app.trace import trace
 from . import tui_base
 from .field import field_shared, read_only_field, editable_field
 
@@ -39,10 +40,10 @@ class row_screen(tui_base.screen):
         for column in self.columns:
             if len(column.name) > self.max_col_name_len:
                 self.max_col_name_len = len(column.name)
-        self.app.trace(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
+        trace(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
 
     def activate_field(self, field_num):
-        self.app.trace(f"row_screen.activate_field({field_num=})")
+        trace(f"row_screen.activate_field({field_num=})")
         if self.active_field != field_num:
             if self.active_field is not None:
                 self.fields[self.active_field].deactivate()
@@ -55,7 +56,7 @@ class row_screen(tui_base.screen):
 
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
-        self.app.trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if self.error_field is not None:
             self.error_field.highlight()
             self.error_field = None
@@ -78,7 +79,7 @@ class row_screen(tui_base.screen):
        #    key = self.popup.process_key(key)
        #    if tui_base.event_handled(key):
        #        return key
-        self.app.trace(f"row_screen.process_key({key=}) {self.active_field=}")
+        trace(f"row_screen.process_key({key=}) {self.active_field=}")
         if self.error_field is not None:
             self.error_field.highlight()
             self.error_field = None
@@ -112,10 +113,10 @@ class row_screen(tui_base.screen):
         return key
 
     def execute(self, command):
-        self.app.trace(f"row_screen.execute({command=})")
+        trace(f"row_screen.execute({command=})")
         match command:
             case 'Cancel':
-                self.app.trace(f"Cancel command going back to screen {self.back.title}")
+                trace(f"Cancel command going back to screen {self.back.title}")
                 return self.back
             case 'Update':
                 if self.update():
@@ -155,7 +156,7 @@ class row_screen(tui_base.screen):
         return True
 
     def draw_body(self):
-        self.app.trace(f"draw_body(): {len(self.columns)=}")
+        trace(f"draw_body(): {len(self.columns)=}")
         self.begin_x = self.max_col_name_len + 2
         self.width = self.cols - self.begin_x
         self.fields = []
@@ -167,7 +168,7 @@ class row_screen(tui_base.screen):
             value_len = len(value)
             nlines = max(1, math.ceil(value_len * 1.2 / self.width))
             lineno_by_col.append(lineno)
-            self.app.trace(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}")
+            trace(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}")
             shared = field_shared(column.name, nlines, self.begin_x, self.width, self.app, column.validate)
             if column.can_edit:
                 f_type = editable_field

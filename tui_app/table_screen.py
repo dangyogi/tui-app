@@ -2,6 +2,7 @@
 
 from functools import partial
 
+from csv_app.trace import trace
 from . import tui_base
 from .field import field_shared, read_only_field, editable_field
 
@@ -29,7 +30,7 @@ class table_screen(tui_base.screen):
     def init(self):
         r'''Run each time run is called, but _not_ each time the screen is resized.
         '''
-        self.app.trace(f"table_screen.init({self.table.name=})")
+        trace(f"table_screen.init({self.table.name=})")
         self.rows = self.table.get_rows(self.app, **self.select)
         self.columns = self.table.columns
         self.max_lens = []
@@ -57,9 +58,9 @@ class table_screen(tui_base.screen):
                                                    column.alignment, left_placeholder="<", right_placeholder=">"))
             begin_x += max_len + 1
         self.width = begin_x - 1
-        self.app.trace(f"table_screen.init({self.table.name=}, {self.width=})")
+        trace(f"table_screen.init({self.table.name=}, {self.width=})")
         for col, max_len in zip(self.column_names, self.max_lens):
-            self.app.trace(f"{col=}, {max_len=}")
+            trace(f"{col=}, {max_len=}")
 
     def process_mouse(self, mouse_event):
         if self.popup is not None:
@@ -67,7 +68,7 @@ class table_screen(tui_base.screen):
             if tui_base.event_handled(mouse_event):
                 return mouse_event
         _, x, y, _, bstate = mouse_event
-        self.app.trace(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        trace(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if bstate == tui_base.curses.BUTTON3_CLICKED:
             if y >= 2:
                 # row popup
@@ -75,7 +76,7 @@ class table_screen(tui_base.screen):
                     self.popup.delete()
                 self.popup_y = y - 2  # selected row#
                 row = self.rows[self.first_row + self.popup_y]
-                self.app.trace(f"screen.process_mouse creating popup for row {self.first_row + self.popup_y}, "
+                trace(f"screen.process_mouse creating popup for row {self.first_row + self.popup_y}, "
                                f"{row=}, commands={row.row_popup_commands}")
                 self.popup = tui_base.popup(row.human_key(), self, row.row_popup_commands,
                                             partial(row.execute, self.app), y + 1, 4)
@@ -100,7 +101,7 @@ class table_screen(tui_base.screen):
             key = self.popup.process_key(key)
             if tui_base.event_handled(key):
                 return key
-        self.app.trace(f"screen.process_key({key=})")
+        trace(f"screen.process_key({key=})")
         if key == 'KEY_DOWN':
             self.scroll_up(self.scroll_amount)
         elif key == 'KEY_UP':
@@ -126,25 +127,25 @@ class table_screen(tui_base.screen):
             return key
 
     def scroll_up(self, nlines):
-        self.app.trace(f"scroll_up({nlines})")
+        trace(f"scroll_up({nlines})")
         if len(self.rows) - self.first_row - nlines < self.lines - 3:
             first_row = len(self.rows) - (self.lines - 3)
             nlines = first_row - self.first_row
-            self.app.trace(f"adjusted {nlines=}")
+            trace(f"adjusted {nlines=}")
         if nlines > 0:
             self.first_row += nlines
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
-                self.app.trace(f"scroll_up: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
+                trace(f"scroll_up: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
                 self.app.stdscr.insdelln(-(self.lines - 2))
                 self.draw_rows(self.first_row)
             else:
-                self.app.trace(f"scroll_up: insdelln(-{nlines=})")
+                trace(f"scroll_up: insdelln(-{nlines=})")
                 self.app.stdscr.insdelln(-nlines)
                 self.draw_rows(self.first_row + (self.lines - 2) - nlines, self.lines - nlines)
 
     def scroll_down(self, nlines):
-        self.app.trace(f"scroll_down({nlines})")
+        trace(f"scroll_down({nlines})")
         if self.first_row - nlines < 0:
             first_row = 0
             nlines = self.first_row
@@ -153,7 +154,7 @@ class table_screen(tui_base.screen):
             self.first_row -= nlines
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
-                self.app.trace(f"scroll_down: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
+                trace(f"scroll_down: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
                 self.app.stdscr.insdelln(-(self.lines - 2))
                 self.draw_rows(self.first_row)
             else:
@@ -161,7 +162,7 @@ class table_screen(tui_base.screen):
                 self.draw_rows(self.first_row, 2, nlines)
 
     def draw_body(self):
-        self.app.trace(f"draw_body(): {len(self.rows)=}")
+        trace(f"draw_body(): {len(self.rows)=}")
         values = [f"{name:<{max_len}}" if column.alignment == 'left' else f"{name:>{max_len}}"
                   for column, name, max_len
                    in zip(self.columns, self.column_names, self.max_lens)]
@@ -178,7 +179,7 @@ class table_screen(tui_base.screen):
     def draw_rows(self, first_row=0, first_line=2, nlines=None):
         if nlines is None:
             nlines = self.lines - first_line
-        self.app.trace(f"draw_rows({first_row=}, {first_line=}, {nlines=})")
+        trace(f"draw_rows({first_row=}, {first_line=}, {nlines=})")
         for lineno, row in enumerate(self.rows[first_row:], first_line):
             if lineno - first_line == nlines:
                 break
@@ -192,5 +193,5 @@ class table_screen(tui_base.screen):
                 self.fields.append(f_type(len(self.fields), row.get(column.name), field_shared, lineno,
                                           attr_pair=column.column_attr_pair(row)))
                 begin_x += max_len + 1
-        self.app.trace()
+        trace()
 

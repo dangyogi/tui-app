@@ -3,6 +3,7 @@
 import math
 
 from csv_app import action
+from csv_app.trace import trace
 from . import tui_base
 from .field import field_shared, read_only_field, editable_field
 
@@ -51,12 +52,14 @@ class menu_screen(tui_base.screen):
 
     def init(self):
         curses = tui_base.curses
-        self.app.trace(f"menu_screen.init({self.title}) {self.num_columns=}, {self.widths=}, {self.col_widths=}")
-        self.app.trace(f"    {hex(curses.color_pair(0x01))=}, {hex(curses.A_REVERSE)=}")
+        trace(f"menu_screen.init({self.title}) {self.num_columns=}, {self.widths=}, {self.col_widths=}")
+        trace(f"    {hex(curses.color_pair(0x01))=}, {hex(curses.A_REVERSE)=}")
+        for a in self.actions.values():
+            a.app_is(self.app)
 
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
-        self.app.trace(f"menu_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        trace(f"menu_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
 
         if self.answer is not None and self.answer.enclose(y, x):
             return self.answer.process_mouse(mouse_event)
@@ -69,20 +72,20 @@ class menu_screen(tui_base.screen):
         else:
             return mouse_event
 
-        self.app.trace(f"menu_screen.process_mouse({y=}, {x=}) in field {index=}, {field.name=}")
+        trace(f"menu_screen.process_mouse({y=}, {x=}) in field {index=}, {field.name=}")
         match bstate:
-            case tui_base.curses.BUTTON1_CLICKED if field.action.can_run():
+            case tui_base.curses.BUTTON1_CLICKED if field.action.can_run:
                 self.activate_field(index)
                 self.clear_message()
                 return None
-            case tui_base.curses.BUTTON1_DOUBLE_CLICKED if field.action.can_run():
+            case tui_base.curses.BUTTON1_DOUBLE_CLICKED if field.action.can_run:
                 self.activate_field(index)
                 self.clear_message()
                 return self.execute(field.action)
         return mouse_event
 
     def process_key(self, key):
-        self.app.trace(f"menu_screen.process_key({key=}) {self.active_field=}")
+        trace(f"menu_screen.process_key({key=}) {self.active_field=}")
         if self.answer is not None:
             ans = self.answer.process_key(key)
             if tui_base.event_handled(ans):
@@ -95,7 +98,7 @@ class menu_screen(tui_base.screen):
                 offset = active_field + 1
             for i in range(len(self.fields)):
                 field_index = (offset + i) % len(self.fields)
-                if self.fields[field_index].action.can_run():
+                if self.fields[field_index].action.can_run:
                     self.activate_field(field_index)
                     self.clear_message()
                     return None
@@ -107,7 +110,7 @@ class menu_screen(tui_base.screen):
                 offset = active_field - 1
             for i in range(len(self.fields)):
                 field_index = (offset - i) % len(self.fields)
-                if self.fields[field_index].action.can_run():
+                if self.fields[field_index].action.can_run:
                     self.activate_field(field_index)
                     self.clear_message()
                     return None
@@ -130,17 +133,17 @@ class menu_screen(tui_base.screen):
         field.reverse_attr(0, len(field.text))
 
     def execute(self, action):
-        self.app.trace(f"menu_screen.execute({action.name=})")
+        trace(f"menu_screen.execute({action.name=})")
         return action.execute(self.app)
 
     def draw_body(self):
-        self.app.trace(f"draw_body(): {self.num_columns=}, {self.col_widths=}, {self.widths=}")
+        trace(f"draw_body(): {self.num_columns=}, {self.col_widths=}, {self.widths=}")
         fill = self.cols - sum(self.col_widths)
         gap = fill // ((self.num_columns - 1) + 4)
         self.begin_x = [gap * 2]
         for width in self.col_widths[:-1]:
             self.begin_x.append(self.begin_x[-1] + width + gap)
-        self.app.trace(f"draw_body(): {fill=}, {gap=}, {self.begin_x=}")
+        trace(f"draw_body(): {fill=}, {gap=}, {self.begin_x=}")
         self.fields = []
         column = 1
         x = self.begin_x[column - 1]
@@ -159,18 +162,18 @@ class menu_screen(tui_base.screen):
                 x = self.begin_x[column - 1]
                 widths = self.widths[column - 1]
             nlines = 1
-            self.app.trace(f"{action.number=}, {action.committed=}, {action.can_run()=}, {action.has_run()=}, "
-                           f"{action.step.state=}, {nlines=} at {lineno=}, {x=}, {widths=}")
+           #trace(f"{action.name=}, {action.number=}, {action.can_run=}, {action.step.state=}, "
+           #      f"{nlines=} at {lineno=}, {x=}, {widths=}")
             w = widths[0]
             if action.task is not None:
                 w += 1 + widths[1]
             self.app.stdscr.addstr(lineno, x + w - len(action.number), f"{action.number}")
-            shared = field_shared(action.number, nlines, x + w + 1, widths[2], self.app)
+            shared = field_shared(action.name, nlines, x + w + 1, widths[2], self.app)
             if action.is_task:
                 attr_pair = self.task_pair
-            elif not action.can_run():
+            elif not action.can_run:
                 attr_pair = self.cant_run_pair
-            elif action.has_run():
+            elif action.has_run:
                 attr_pair = self.may_run_pair
             else:
                 attr_pair = self.must_run_pair
@@ -179,7 +182,7 @@ class menu_screen(tui_base.screen):
         if lineno > self.max_y:
             self.max_y = lineno
         last_y.append(lineno)
-        self.app.trace(f"{self.max_y=}, {last_y=}")
+        trace(f"{self.max_y=}, {last_y=}")
         self.active_field = None
 
         # write legend:
@@ -214,6 +217,8 @@ class menu_screen(tui_base.screen):
             x = (self.cols - len(self.question) - entry_len - 1) // 2  # center question/response
             self.app.stdscr.addstr(y, x, self.question)
             self.answer.paint()
+        trace("draw_body done")
+       #trace()
 
     def show_message(self, msg, attr):
         x = (self.cols - len(msg)) // 2  # center message
