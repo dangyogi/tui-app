@@ -20,11 +20,11 @@ class table_screen(tui_base.screen):
     def screen_popup_commands(self):
         ans = self.table.screen_popup_commands
         if self.back is not None:
-            ans.append('Back')
+            ans += 'Back',
         if self.app.changed:
-            ans.append('Abort')
+            ans += 'Abort',
         else:
-            ans.append('Exit')
+            ans += 'Exit',
         return ans
 
     def init(self):

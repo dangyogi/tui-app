@@ -15,7 +15,10 @@ class row_screen(tui_base.screen):
     error_msg_attr = 0x10
     error_field = None
 
-    def __init__(self, row, back=None, global_validate=None, callback=None):
+    master_row = None
+    table = None
+
+    def __init__(self, title, back=None, global_validate=None, callback=None):
         r'''
             global_validate is a function that is called on update after individual
             field validates have been done (and all passed).  This function takes
@@ -25,15 +28,38 @@ class row_screen(tui_base.screen):
             callback is a function that is called after a succesful Submit.  It takes no
             arguments and returns None.
         '''
-
-        super().__init__(f"{row.table_name}: {row.human_key()}", back)
-        self.row = row
-        self.columns = self.row.columns
-        self.row_screen_commands = list(row.row_screen_commands) \
-                                 + ['Cancel', 'Update', 'Submit']
+        super().__init__(title, back)
         self.fields = ()
         self.global_validate = global_validate
         self.callback = callback
+        self.attrs_changed = set()
+
+    @classmethod
+    def for_update(cls, row, back=None, global_validate=None, callback=None):
+        ans = cls(f"{row.table_name}: {row.human_key()}", back,
+                  global_validate=global_validate, callback=callback)
+        ans.init_row(row)
+        return ans
+
+    @classmethod
+    def for_create(cls, table, back=None, global_validate=None, callback=None):
+        ans = cls(f"{table.name}: Create", back,
+                  global_validate=global_validate, callback=callback)
+        ans.init_table(table)
+        return ans
+
+    def init_row(self, row):
+        self.master_row = row
+        self.row = row.copy()
+        self.columns = self.row.columns
+        self.row_screen_commands = list(row.row_screen_commands) \
+                                 + ['Cancel', 'Validate', 'Submit']
+
+    def init_table(self, table):
+        self.table = table
+        self.row = table.row_class(create=True)
+        self.columns = self.table.columns
+        self.row_screen_commands = ['Cancel', 'Validate', 'Create']
 
     def init(self):
         self.max_col_name_len = 0
@@ -118,24 +144,32 @@ class row_screen(tui_base.screen):
             case 'Cancel':
                 trace(f"Cancel command going back to screen {self.back.title}")
                 return self.back
-            case 'Update':
-                if self.update():
-                    return 'REFRESH'
-            case 'Submit':
-                if self.update():
+            case 'Validate':
+                if self.validate():
+                    return self.update()
+            case 'Submit':  # updating a row
+                if self.validate():
+                    self.update()
+                    self.copy_to_master()
+                    if self.callback is not None:
+                        self.callback()
+                    return self.back
+            case 'Create':  # creating a row
+                if self.validate():
+                    self.update()
+                    self.insert()
                     if self.callback is not None:
                         self.callback()
                     return self.back
 
-    def update(self):
+    def validate(self):
         r'''Returns True if all validation passes.
 
         Else dislays error message.
-
-        Also updates self.row if all validation passes.
         '''
         for field in self.fields:
             if field.changed:
+                self.attrs_changed.add(field.name)
                 try:
                     field.validate()
                 except ValueError as exc:
@@ -143,17 +177,42 @@ class row_screen(tui_base.screen):
                     self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
                     self.error_field = field
                     return False
+        if self.table is not None:
+            self.row.check_required(self.attrs_changed)
         if self.global_validate is not None:
             msg = self.global_validate(self)
             if msg:
                 self.message(msg, tui_base.curses.color_pair(self.error_msg_attr))
                 return False
+        return True
+
+    def update(self):
+        r'''Copies the values changed on the screen to self.row.
+
+        Returns screen event.
+        '''
         for field in self.fields:
             if field.changed:
                 self.row.set(field.name, field.text)
                 field.changed = False
+        return 'REFRESH'
+
+    def copy_to_master(self):
+        r'''Copies the values changed on the screen from self.row to self.master_row.
+
+        Doesn't return anything.
+        '''
+        for attr in self.attrs_changed:
+            self.master_row.set(attr, getattr(self.row, attr))
         self.app.set_changed()
-        return True
+
+    def insert(self):
+        r'''Inserts the values changed on the screen from self.row.
+
+        Doesn't return anything.
+        '''
+        self.table.insert(**{attr: getattr(self.row, attr) for attr in self.attrs_changed})
+        self.app.set_changed()
 
     def draw_body(self):
         trace(f"draw_body(): {len(self.columns)=}")
@@ -166,11 +225,13 @@ class row_screen(tui_base.screen):
             self.app.stdscr.addstr(lineno, 0, f"{column.name}:")
             value = self.row.get(column.name)
             value_len = len(value)
+            if column.edit_width is not None and column.edit_width > value_len:
+                value_len = column.edit_width
             nlines = max(1, math.ceil(value_len * 1.2 / self.width))
             lineno_by_col.append(lineno)
             trace(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}")
             shared = field_shared(column.name, nlines, self.begin_x, self.width, self.app, column.validate)
-            if column.can_edit:
+            if self.table is not None and not column.calculated or column.can_edit:
                 f_type = editable_field
             else:
                 f_type = read_only_field
