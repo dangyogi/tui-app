@@ -31,36 +31,7 @@ class table_screen(tui_base.screen):
         r'''Run each time run is called, but _not_ each time the screen is resized.
         '''
         trace(f"table_screen.init({self.table.name=})")
-        self.rows = self.table.get_rows(self.app, **self.select)
         self.columns = self.table.columns
-        self.max_lens = []
-        self.column_names = []
-        self.field_shareds = []
-        begin_x = 0
-        for column in self.columns:
-            if column.min_width is not None:
-                max_len = column.min_width
-            else:
-                max_len = 0
-                for row in self.rows:
-                    value = row.get(column.name)
-                    if len(value) > max_len:
-                        max_len = len(value)
-            if len(column.name) > max_len:
-                name = column.abbr
-            else:
-                name = column.name
-            self.column_names.append(name)
-            if len(name) > max_len:
-                max_len = len(name)
-            self.max_lens.append(max_len)
-            self.field_shareds.append(field_shared(name, 1, begin_x, max_len, self.app, column.validate,
-                                                   column.alignment, left_placeholder="<", right_placeholder=">"))
-            begin_x += max_len + 1
-        self.width = begin_x - 1
-        trace(f"table_screen.init({self.table.name=}, {self.width=})")
-        for col, max_len in zip(self.column_names, self.max_lens):
-            trace(f"{col=}, {max_len=}")
 
     def process_mouse(self, mouse_event):
         if self.popup is not None:
@@ -162,7 +133,36 @@ class table_screen(tui_base.screen):
                 self.draw_rows(self.first_row, 2, nlines)
 
     def draw_body(self):
+        self.rows = self.table.get_rows(self.app, **self.select)
         trace(f"draw_body(): {len(self.rows)=}")
+        self.max_lens = []
+        self.column_names = []
+        self.field_shareds = []
+        begin_x = 0
+        for column in self.columns:
+            if column.min_width is not None:
+                max_len = column.min_width
+            else:
+                max_len = 0
+                for row in self.rows:
+                    value = row.get(column.name)
+                    if len(value) > max_len:
+                        max_len = len(value)
+            if len(column.name) > max_len:
+                name = column.abbr
+            else:
+                name = column.name
+            self.column_names.append(name)
+            if len(name) > max_len:
+                max_len = len(name)
+            self.max_lens.append(max_len)
+            self.field_shareds.append(field_shared(name, 1, begin_x, max_len, self.app, column.validate,
+                                                   column.alignment, left_placeholder="<", right_placeholder=">"))
+            begin_x += max_len + 1
+        self.width = begin_x - 1
+        trace(f"table_screen.draw_body({self.table.name=}, {self.width=})")
+        for col, max_len in zip(self.column_names, self.max_lens):
+            trace(f"{col=}, {max_len=}")
         values = [f"{name:<{max_len}}" if column.alignment == 'left' else f"{name:>{max_len}}"
                   for column, name, max_len
                    in zip(self.columns, self.column_names, self.max_lens)]
