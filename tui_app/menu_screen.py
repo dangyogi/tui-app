@@ -134,7 +134,9 @@ class menu_screen(tui_base.screen):
 
     def execute(self, action):
         trace(f"menu_screen.execute({action.name=})")
-        return action.execute(self.app)
+        ans = action.execute(self.app)
+        trace(f"menu_screen.execute -> {ans}")
+        return ans
 
     def draw_body(self):
         trace(f"draw_body(): {self.num_columns=}, {self.col_widths=}, {self.widths=}")

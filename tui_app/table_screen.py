@@ -9,11 +9,15 @@ from .field import field_shared, read_only_field, editable_field
 
 class table_screen(tui_base.screen):
     scroll_amount = 3
+    error_attr = 0x01
 
-    def __init__(self, table, back=None, **select):
+    def __init__(self, table, back=None, validate_fn=None, **select):
+        r'''The validate_fn is passed the table and returns an error_message or None.
+        '''
         super().__init__(table.name, back)
         self.table = table
         self.first_row = 0
+        self.validate_fn = validate_fn
         self.select = select
 
     @property
@@ -33,6 +37,14 @@ class table_screen(tui_base.screen):
         trace(f"table_screen.init({self.table.name=})")
         self.columns = self.table.columns
 
+    def validate(self):
+        if self.validate_fn is not None:
+            msg = self.validate_fn(self.table)
+            if msg:
+                self.popup = tui_base.popup_message('Error', self, msg, self.error_attr)
+                return False
+        return True
+
     def process_mouse(self, mouse_event):
         if self.popup is not None:
             mouse_event = self.popup.process_mouse(mouse_event)
@@ -49,8 +61,8 @@ class table_screen(tui_base.screen):
                 row = self.rows[self.first_row + self.popup_y]
                 trace(f"screen.process_mouse creating popup for row {self.first_row + self.popup_y}, "
                                f"{row=}, commands={row.row_popup_commands}")
-                self.popup = tui_base.popup(row.human_key(), self, row.row_popup_commands,
-                                            partial(row.execute, self.app), y + 1, 4)
+                self.popup = tui_base.popup_menu(row.human_key(), self, row.row_popup_commands,
+                                                 partial(row.execute, self.app), y + 1, 4)
             else:
                 # table level popup at top of screen
                 if self.popup is not None:
@@ -59,7 +71,8 @@ class table_screen(tui_base.screen):
                     else:
                         return None                # this is a table level popup, just keep using it...
                 self.popup_y = None
-                self.popup = tui_base.popup("Screen", self, self.screen_popup_commands, self.app.execute, 1, 4)
+                self.popup = tui_base.popup_menu("Screen", self, self.screen_popup_commands,
+                                                 self.app.execute, 1, 4)
         elif bstate == tui_base.curses.BUTTON4_PRESSED:
             self.scroll_down(self.scroll_amount)
         elif bstate == tui_base.curses.BUTTON5_PRESSED:

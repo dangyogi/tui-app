@@ -142,25 +142,37 @@ class row_screen(tui_base.screen):
         trace(f"row_screen.execute({command=})")
         match command:
             case 'Cancel':
-                trace(f"Cancel command going back to screen {self.back.title}")
+                trace(f"row_screen.execute: Cancel command going back to screen {self.back.title}")
                 return self.back
             case 'Validate':
+                trace(f"row_screen.execute: Validate")
                 if self.validate():
-                    return self.update()
+                    trace(f"row_screen.execute: Validate passed")
+                    ans = self.update()
+                    trace(f"row_screen.execute -> {ans}")
+                    return ans
+                trace(f"row_screen.execute: Validate failed -> None")
             case 'Submit':  # updating a row
+                trace(f"row_screen.execute: Submit")
                 if self.validate():
+                    trace(f"row_screen.execute: Validate passed")
                     self.update()
                     self.copy_to_master()
                     if self.callback is not None:
                         self.callback()
+                    trace(f"row_screen.execute -> {self.back=}")
                     return self.back
+                trace(f"row_screen.execute: Validate failed -> None")
             case 'Create':  # creating a row
                 if self.validate():
+                    trace(f"row_screen.execute: Validate passed")
                     self.update()
                     self.insert()
                     if self.callback is not None:
                         self.callback()
+                    trace(f"row_screen.execute -> {self.back=}")
                     return self.back
+                trace(f"row_screen.execute: Validate failed -> None")
 
     def validate(self):
         r'''Returns True if all validation passes.

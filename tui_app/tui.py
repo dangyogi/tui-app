@@ -93,7 +93,7 @@ class app:
         self.stdscr.addstr(0, 6, "Changed", attr)
 
     def execute(self, command):
-        r'''Called for screen popup.
+        r'''Called for table_screen popup.
 
         Calls self.screen.table.execute if it does not recognize the command.
         '''
@@ -103,15 +103,22 @@ class app:
             return table_screen(self.tables[command], self.screen)
         match command:
             case 'Back':
-                return self.screen.back
+                trace("app.execute: Back validating table")
+                if self.screen.validate():
+                    trace(f"app.execute: passed validate -> {self.screen.back=}")
+                    return self.screen.back
+                trace(f"app.execute: failed validate -> None")
+                return None
             case 'Exit':
-                trace(f"command is {command!r}, returning 'APP_EXIT'")
+                trace(f"app.execute: Exit command -> 'APP_EXIT'")
                 return 'APP_EXIT'
             case 'Abort':
-                trace(f"command is {command!r}, returning 'APP_ABORT'")
+                trace(f"app.execute: Abort command -> 'APP_ABORT'")
                 return 'APP_ABORT'
         trace(f"app.execute({command=}): forwarding to screen")
-        return self.screen.table.execute(self, command)
+        ans = self.screen.table.execute(self, command)
+        trace(f"app.execute -> {ans}")
+        return ans
 
 
 

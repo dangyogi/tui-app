@@ -192,6 +192,9 @@ class screen:
         '''
         pass
 
+    def __str__(self):
+        return f"<{self.__class__.__name__}: {self.title}>"
+
     def run(self, app):
         r'''This is called once to handle all of the screen processing, until the app switches to a new screen.
 
@@ -274,19 +277,33 @@ class popup:
     Blank space is added on the outside sides and top or bottom depending on outside_space.
     '''
 
-    def __init__(self, name, screen, commands, cmd_fn, begin_y, begin_x, outside_space='below'):
+    def __init__(self, name, screen, begin_y, begin_x, text_height, text_width, outside_space=None,
+                 name_attr_pair=0):
+        r'''To understand what's going on here:
+
+        - A subwin is created with self.height/width/begin_y/begin_x.
+          - with a box that occupies the top and bottom rows, and the left and right columns.
+          - In addition a blank column is left inside the left and right box sides.
+          - The subwin has its own coordinate system, but this includes the box and extra spacing.
+            - Thus, the first char of text goes at y=1, x=2 in subwin coordinates.
+        - The saved/restored area extends outside of the subwin.
+          - It is defined by self.saved_height/saved_width/saved_y/saved_x.
+          - This includes a blank column outside the left and right box sides, and a blank row outside
+            the top or bottom box side depending on outer_space.
+          - Thus, begin_y and begin_x must be at least 1.
+        '''
         self.border_at = curses.color_pair(0xF1)
         self.name = name
         self.screen = screen
-        self.commands = commands
-        self.cmd_fn = cmd_fn
-        self.height = 2 + len(commands)                                             # includes box
-        self.width = 4 + max(len(name), max(len(command) for command in commands))  # includes box and inside spacing
+        self.text_height = text_height
+        self.text_width = text_width
+        self.height = 2 + text_height
+        self.width = 4 + max(len(name), text_width)  # includes box and inside spacing
 
-        trace(f"popup.__init__({name=}, {commands=}, {begin_y=}, {begin_x=})")
+        trace(f"popup.__init__({name=}, {begin_y=}, {begin_x=}, {text_height=}, {text_width=}): "
+              f"{self.height=}, {self.width=}")
 
         assert 1 <= begin_y, f"popup.__init__({name=}) {begin_y=} < 1"
-        self.saved_height = self.height + 1
         assert 1 <= begin_x <= screen.cols - self.width, \
                f"popup.__init__({name=}) {begin_x=} outside 1 to {screen.cols - self.width}"
 
@@ -298,8 +315,13 @@ class popup:
             self.begin_y = begin_y - (self.height + 1)
             outside_space = 'above'
 
+        if outside_space is None:
+            self.saved_height = self.height
+        else:
+            self.saved_height = self.height + 1
+
         match outside_space:
-            case 'below':
+            case 'below' | None:
                 self.saved_y = self.begin_y
             case 'above':
                 self.saved_y = self.begin_y - 1
@@ -313,11 +335,12 @@ class popup:
             self.saved_width = self.width + 2
 
         trace(f"popup.__init__: {self.begin_y=}, {self.begin_x=}, "
-              f"{self.saved_y=}, {self.saved_x=}, {self.height=}, {self.width=})")
+              f"{self.saved_y=}, {self.saved_x=}, {self.saved_height=}, {self.saved_width=})")
 
         self.saved_chars = [[screen.app.stdscr.inch(line, col)
                              for col in range(self.saved_x, self.saved_x + self.saved_width)]
                             for line in range(self.saved_y, self.saved_y + self.saved_height)]
+        # blank popup area, including space outside of subwin
         for y in range(self.saved_y, self.saved_y + self.saved_height):
             screen.app.stdscr.addstr(y, self.saved_x, ' ' * self.saved_width)
         self.subwin = screen.app.stdscr.subwin(self.height, self.width, self.begin_y, self.begin_x)
@@ -327,64 +350,21 @@ class popup:
        #self.subwin.border(chars[0], chars[1], chars[2], chars[3], chars[2], chars[2], chars[3], chars[3])
         self.subwin.box()   # does not change window coords, so addstr can overwrite the box chars,
                             # including wrapping
-        self.subwin.addstr(0, 2, self.name)
+        self.subwin.addstr(0, 2, self.name, curses.color_pair(name_attr_pair))
        #self.subwin.chgat(0, 0, self.width, self.border_at)
-        for lineno, command in enumerate(commands, 1):
-            self.subwin.addstr(lineno, 2, f"{command:{self.width - 4}}")
-        self.selection = None
-        self.select(1)
 
     def process_key(self, key):
         trace(f"popup.process_key({key=})")
-        if key == 'KEY_DOWN':
-            if self.selection + 1 < self.height - 1:
-                self.select(self.selection + 1)
-        elif key == 'KEY_UP':
-            if self.selection - 1 > 0:
-                self.select(self.selection - 1)
-        elif key == 'KEY_ENTER' or key == '\n' or key == ' ':
-            return self.execute()
-        elif key == "\x1B" or key == 'KEY_DELETE' or key == 'KEY_DC':
+        if key == "\x1B" or key == 'KEY_DELETE' or key == 'KEY_DC':
             self.delete()
         else:
             return key
 
     def process_mouse(self, mouse_event):
-        _, x, y, _, bstate = mouse_event
-        trace(f"popup.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})")
-        if not self.enclose(y, x) or not (self.begin_y < y < self.begin_y + self.height - 1):
-            return mouse_event
-        if bstate == curses.BUTTON1_CLICKED:
-            self.select(y - self.begin_y)
-        if bstate == curses.BUTTON1_DOUBLE_CLICKED:
-            self.select(y - self.begin_y)
-            return self.execute()
-        else:
-            return mouse_event
-
-    def execute(self):
-        trace(f"popup.execute(): {self.selection=}")
-        command = self.commands[self.selection - 1]
-        trace(f"popup.execute(): {command=}")
-        self.delete()
-        return self.cmd_fn(command)
+        return mouse_event
 
     def enclose(self, y, x):
         return self.subwin.enclose(y, x)
-
-    def select(self, y):
-        r'''y in subwin coord.
-
-        So first command is 1, last command is self.height - 2
-        '''
-        trace(f"popup.select({y=})")
-        assert 0 < y < self.height - 1, \
-           f"popup.select: {y=} out of range {1}-{self.height - 2}"
-        if self.selection is not None:
-            self.subwin.chgat(self.selection, 2, self.width - 4, 0)
-        self.selection = y
-        self.subwin.chgat(self.selection, 2, self.width - 4, curses.A_REVERSE)
-        self.subwin.noutrefresh()
 
     def delete(self):
         trace(f"popup.delete()")
@@ -397,3 +377,74 @@ class popup:
                 self.screen.app.stdscr.addch(lineno, col, char)
         self.screen.popup = None
 
+class popup_message(popup):
+    def __init__(self, name, screen, lines, text_attr_pair=0):
+        if isinstance(lines, str):
+            lines = [lines]
+        text_width = max(len(line) for line in lines)
+        begin_y = (screen.lines - len(lines) - 2) // 2
+        begin_x = (screen.cols - text_width - 4) // 2
+        super().__init__(name, screen, begin_y, begin_x, len(lines), text_width)
+        for lineno, line in enumerate(lines, 1):
+            self.subwin.addstr(lineno, 2, f"{line:{self.width - 4}}", curses.color_pair(text_attr_pair))
+
+class popup_menu(popup):
+    def __init__(self, name, screen, commands, cmd_fn, begin_y, begin_x, outside_space='below'):
+        super().__init__(name, screen, begin_y, begin_x,
+                         len(commands), max(len(command) for command in commands),
+                         outside_space)
+        self.commands = commands
+        self.cmd_fn = cmd_fn
+        for lineno, command in enumerate(commands, 1):
+            self.subwin.addstr(lineno, 2, f"{command:{self.width - 4}}")
+        self.selection = None   # index into self.commands
+        self.select(0)
+
+    def process_key(self, key):
+        trace(f"popup_menu.process_key({key=})")
+        if key == 'KEY_DOWN':
+            if self.selection + 1 < self.text_height:
+                self.select(self.selection + 1)
+        elif key == 'KEY_UP':
+            if self.selection - 1 >= 0:
+                self.select(self.selection - 1)
+        elif key == 'KEY_ENTER' or key == '\n' or key == ' ':
+            return self.execute()
+        else:
+            return super().process_key(key)
+
+    def process_mouse(self, mouse_event):
+        _, x, y, _, bstate = mouse_event
+        trace(f"popup_menu.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})")
+        if not self.enclose(y, x) or not (self.begin_y < y < self.begin_y + self.height - 1):
+            return mouse_event
+        if bstate == curses.BUTTON1_CLICKED:
+            self.select(y - self.begin_y - 1)
+        if bstate == curses.BUTTON1_DOUBLE_CLICKED:
+            self.select(y - self.begin_y - 1)
+            return self.execute()
+        else:
+            return super().process_mouse(mouse_event)
+
+    def execute(self):
+        trace(f"popup_menu.execute(): {self.selection=}")
+        command = self.commands[self.selection]
+        trace(f"popup_menu.execute(): {command=}")
+        self.delete()
+        ans = self.cmd_fn(command)
+        trace(f"popup_menu.execute() -> {ans}")
+        return ans
+
+    def select(self, index):
+        r'''index into self.commands
+
+        So first command is 0, last command is self.text_height - 1
+        '''
+        trace(f"popup_menu.select({index=})")
+        assert 0 <= index < self.text_height, \
+           f"popup_menu.select: {index=} out of range {0}-{self.text_height - 1}"
+        if self.selection is not None:
+            self.subwin.chgat(self.selection + 1, 2, self.width - 4, 0)
+        self.selection = index
+        self.subwin.chgat(self.selection + 1, 2, self.width - 4, curses.A_REVERSE)
+        self.subwin.noutrefresh()
