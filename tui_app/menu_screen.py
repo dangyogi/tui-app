@@ -127,14 +127,14 @@ class menu_screen(tui_base.screen):
     def activate_field(self, index):
         if self.active_field is not None:
             field = self.fields[self.active_field]
-            field.reverse_attr(0, len(field.text))
+            field.reverse_attr()
         self.active_field = index
         field = self.fields[self.active_field]
-        field.reverse_attr(0, len(field.text))
+        field.reverse_attr()
 
     def execute(self, action):
         trace(f"menu_screen.execute({action.name=})")
-        ans = action.execute(self.app)
+        ans = action.execute(self)
         trace(f"menu_screen.execute -> {ans}")
         return ans
 
@@ -238,6 +238,7 @@ class menu_screen(tui_base.screen):
             self.message = None
 
     def ask_question(self, question, callback, default=''):
+        trace(f"menu_screen.ask_question({question=!r}, {default=!r})")
         self.clear_question()
         entry_len = 5
         y = self.max_y + 4
@@ -254,9 +255,12 @@ class menu_screen(tui_base.screen):
         self.callback = callback
 
     def run_callback(self, s):
+        trace(f"menu_screen.run_callback({s=!r})")
         callback = self.callback
         self.clear_question()  # sets self.callback to None
-        return callback(s)
+        ans = callback(s)
+        trace(f"menu_screen.run_callback -> {ans}")
+        return ans
 
     def clear_question(self):
         if self.question is not None:

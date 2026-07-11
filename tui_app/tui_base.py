@@ -232,7 +232,8 @@ class screen:
                         sys.exit(1)
                     if key == 'q':
                         return None  # quit
-                app.stdscr.refresh() # does not refresh subwin the first time its called, but gets it the second time(??)
+                app.stdscr.refresh() # does not refresh subwin the first time its called, but gets it the
+                                     # second time(??)
                                      # fixed by calling noutrefresh() on subwin
 
     def delete(self):
@@ -247,6 +248,21 @@ class screen:
 
     def process_key(self, key):
         return key
+
+    def validate(self):
+        return True
+
+    def execute(self, command):
+        trace(f"screen.execute({command=})")
+        match command:
+            case 'Back':
+                trace("screen.execute: Back validating table")
+                if self.validate():
+                    trace(f"screen.execute: passed validate -> {self.back=}")
+                    return self.back
+                trace(f"screen.execute: failed validate -> None")
+                return None
+        return self.app.execute(command)
 
     def draw(self):
         r'''Run each time the screen is resized.

@@ -152,6 +152,7 @@ class row_screen(tui_base.screen):
                     trace(f"row_screen.execute -> {ans}")
                     return ans
                 trace(f"row_screen.execute: Validate failed -> None")
+                return None
             case 'Submit':  # updating a row
                 trace(f"row_screen.execute: Submit")
                 if self.validate():
@@ -163,6 +164,7 @@ class row_screen(tui_base.screen):
                     trace(f"row_screen.execute -> {self.back=}")
                     return self.back
                 trace(f"row_screen.execute: Validate failed -> None")
+                return None
             case 'Create':  # creating a row
                 if self.validate():
                     trace(f"row_screen.execute: Validate passed")
@@ -173,6 +175,11 @@ class row_screen(tui_base.screen):
                     trace(f"row_screen.execute -> {self.back=}")
                     return self.back
                 trace(f"row_screen.execute: Validate failed -> None")
+                return None
+        trace(f"row_screen.execute: forwarding to base screen class")
+        ans = super().execute(command)
+        trace(f"row_screen.execute -> {ans}")
+        return ans
 
     def validate(self):
         r'''Returns True if all validation passes.

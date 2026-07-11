@@ -16,9 +16,10 @@ class table_screen(tui_base.screen):
         '''
         super().__init__(table.name, back)
         self.table = table
-        self.first_row = 0
+        self.first_row = 0         # index into self.rows of top row on screen
         self.validate_fn = validate_fn
         self.select = select
+        self.selected_row = None   # index into self.rows, first column is A_REVERSEd
 
     @property
     def screen_popup_commands(self):
@@ -62,7 +63,7 @@ class table_screen(tui_base.screen):
                 trace(f"screen.process_mouse creating popup for row {self.first_row + self.popup_y}, "
                                f"{row=}, commands={row.row_popup_commands}")
                 self.popup = tui_base.popup_menu(row.human_key(), self, row.row_popup_commands,
-                                                 partial(row.execute, self.app), y + 1, 4)
+                                                 partial(row.execute, self), y + 1, 4)
             else:
                 # table level popup at top of screen
                 if self.popup is not None:
@@ -72,7 +73,7 @@ class table_screen(tui_base.screen):
                         return None                # this is a table level popup, just keep using it...
                 self.popup_y = None
                 self.popup = tui_base.popup_menu("Screen", self, self.screen_popup_commands,
-                                                 self.app.execute, 1, 4)
+                                                 self.execute, 1, 4)
         elif bstate == tui_base.curses.BUTTON4_PRESSED:
             self.scroll_down(self.scroll_amount)
         elif bstate == tui_base.curses.BUTTON5_PRESSED:
@@ -86,29 +87,46 @@ class table_screen(tui_base.screen):
             if tui_base.event_handled(key):
                 return key
         trace(f"screen.process_key({key=})")
-        if key == 'KEY_DOWN':
-            self.scroll_up(self.scroll_amount)
-        elif key == 'KEY_UP':
-            self.scroll_down(self.scroll_amount)
-        elif key == 'KEY_PPAGE':  # page down
-            self.scroll_down(self.lines - 3)
-        elif key == 'KEY_NPAGE':  # page up
-            self.scroll_up(self.lines - 3)
-        elif key == 'KEY_HOME':
-            if self.first_row:
-                self.scroll_down(self.first_row)
-        elif key == 'KEY_END':
-            rows_left = len(self.rows) - self.first_row
-            if rows_left > self.lines - 2:
-                self.scroll_up(rows_left - (self.lines - 3))
-       #elif key == 'p':
-       #    self.app.stdscr.move(4, 4)
-       #elif key == 'r':
-       #    self.app.stdscr.chgat(5, 4, 1, tui_base.curses.A_REVERSE)  # matches curses.curs_set(1) (1 = normal)
-       #elif key == 'u':
-       #    self.app.stdscr.chgat(6, 4, 1, tui_base.curses.A_UNDERLINE)  # works, not sure how useful it is...
-        else:
-            return key
+        match key:
+            case '\t':
+                if self.selected_row is not None:
+                    pass # FIX: ??.reverse_attr()
+                if self.selected_row is None or self.selected_row >= self.first_row + (self.lines - 2) - 1:
+                    self.selected_row = self.first_row
+                else:
+                    self.selected_row += 1
+                pass # FIX: ??.reverse_attr()
+            case KET_BTAB:
+                if self.selected_row is not None:
+                    pass # FIX: ??.reverse_attr()
+                if self.selected_row is None or self.selected_row >= self.first_row + (self.lines - 2) - 1:
+                    self.selected_row = self.first_row + (self.lines - 2) - 1  # last line
+                else:
+                    self.selected_row -= 1
+                pass # FIX: ??.reverse_attr()
+            case 'KEY_DOWN':
+                self.scroll_up(self.scroll_amount)
+            case 'KEY_UP':
+                self.scroll_down(self.scroll_amount)
+            case 'KEY_PPAGE':  # page down
+                self.scroll_down(self.lines - 3)
+            case 'KEY_NPAGE':  # page up
+                self.scroll_up(self.lines - 3)
+            case 'KEY_HOME':
+                if self.first_row:
+                    self.scroll_down(self.first_row)
+            case 'KEY_END':
+                rows_left = len(self.rows) - self.first_row
+                if rows_left > self.lines - 2:
+                    self.scroll_up(rows_left - (self.lines - 3))
+           #case 'p':
+           #    self.app.stdscr.move(4, 4)
+           #case 'r':
+           #    self.app.stdscr.chgat(5, 4, 1, tui_base.curses.A_REVERSE)  # matches curses.curs_set(1) (1 = normal)
+           #case 'u':
+           #    self.app.stdscr.chgat(6, 4, 1, tui_base.curses.A_UNDERLINE)  # works, not sure how useful it is...
+            case _:
+                return key
 
     def scroll_up(self, nlines):
         trace(f"scroll_up({nlines})")
@@ -118,6 +136,9 @@ class table_screen(tui_base.screen):
             trace(f"adjusted {nlines=}")
         if nlines > 0:
             self.first_row += nlines
+            if self.selected_row is not None and self.selected_row < self.first_row:
+                # selected row will be deleted, so no need to un-reverse it...
+                self.selected_row = None
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
                 trace(f"scroll_up: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
@@ -136,6 +157,9 @@ class table_screen(tui_base.screen):
         assert nlines >= 0, f"{nlines=} < 0"
         if nlines:
             self.first_row -= nlines
+            if self.selected_row is not None and self.selected_row >= self.first_row + self.lines - 2:
+                # selected row will be deleted, so no need to un-reverse it...
+                self.selected_row = None
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
                 trace(f"scroll_down: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
@@ -144,6 +168,18 @@ class table_screen(tui_base.screen):
             else:
                 self.app.stdscr.insdelln(nlines)
                 self.draw_rows(self.first_row, 2, nlines)
+
+    def execute(self, command):
+        trace(f"table_screen.execute({command=})")
+       #match command:
+       #    case 'Cancel':
+        trace(f"table_screen.execute: forwarding to table")
+        ans = self.table.execute(self, command)
+        if ans == 'Continue':
+            trace(f"table_screen.execute: forwarding to base screen class")
+            ans = super().execute(command)
+        trace(f"table_screen.execute -> {ans}")
+        return ans
 
     def draw_body(self):
         self.rows = self.table.get_rows(self.app, **self.select)
@@ -193,6 +229,10 @@ class table_screen(tui_base.screen):
         if nlines is None:
             nlines = self.lines - first_line
         trace(f"draw_rows({first_row=}, {first_line=}, {nlines=})")
+        if self.selected_row is None:
+            selected_lineno = -1
+        else:
+            selected_lineno = first_line + (self.selected_row - first_row)
         for lineno, row in enumerate(self.rows[first_row:], first_line):
             if lineno - first_line == nlines:
                 break
@@ -206,5 +246,7 @@ class table_screen(tui_base.screen):
                 self.fields.append(f_type(len(self.fields), row.get(column.name), field_shared, lineno,
                                           attr_pair=column.column_attr_pair(row)))
                 begin_x += max_len + 1
+            if lineno == selected_lineno:
+                self.fields[0].reverse_attr()
         trace()
 

@@ -3,6 +3,7 @@
 .pyhist
 .private
 color_display.txt
+trace.txt
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

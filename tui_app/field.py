@@ -133,7 +133,7 @@ class read_only_field:
     can_edit = False
     changed = False
 
-    def __init__(self, field_num, text, field_shared, begin_y, paint=True, attr_pair=None):
+    def __init__(self, field_num, text, field_shared, begin_y, paint=True, attr_pair=None, attr=0):
         self.field_num = field_num   # index into fields list
         self.text = text
         self.field_shared = field_shared
@@ -143,6 +143,7 @@ class read_only_field:
             self.attr_pair = self.default_attr_pair
         else:
             self.attr_pair = attr_pair
+        self.attr = attr
         trace(f"{self.__class__.__name__}({self.name}).__init__: "
               f"{text=!r}, {begin_y=}, {self.nlines=}, {self.begin_x=}, {self.ncols=}")
         if paint:
@@ -183,7 +184,7 @@ class read_only_field:
        #trace(f"{self.name}.paint({self.text=!r})")
         self.starts = []
         stdscr = self.app.stdscr
-        attr = curses.color_pair(self.attr_pair)
+        attr = curses.color_pair(self.attr_pair) + self.attr
         for y, (start, line) in zip(range(self.begin_y, self.begin_y + self.nlines),
                                     self.field_shared.wrap(self.text, self.scroll)):
             self.starts.append(start)
@@ -200,13 +201,15 @@ class read_only_field:
         for y, x, num in self.gen_locations(start, start + max(1, length)):
             stdscr.chgat(y, x, num, attr)
 
-    def reverse_attr(self, start, length):
+    def reverse_attr(self, start=0, length=None):
         r'''This takes indexes into self.text.
 
         Toggles curses.A_REVERSE
         '''
         stdscr = self.app.stdscr
         attr = None
+        if length is None:
+            length = len(self.text)
         for y, x, num in self.gen_locations(start, start + max(1, length)):
             if attr is None:
                 current_attr = stdscr.inch(y, x)
@@ -356,14 +359,6 @@ class editable_field(read_only_field):
                     self.chgat(self.position, self.selection_len, attr)
                 else:
                     self.chgat(self.position + self.selection_len, abs(self.selection_len), attr)
-
-    # FIX: not called
-    def highlight(self, attr=None):
-        r'''highlight with no attr undoes prior highlight.
-        '''
-        if attr is None:
-            attr = curses.color_pair(self.attr_pair)
-        self.chgat(0, len(self.text), attr)
 
     def set_position(self, index):
        #trace(f"{self.name}.set_position({index=})")

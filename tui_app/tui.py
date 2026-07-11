@@ -93,32 +93,27 @@ class app:
         self.stdscr.addstr(0, 6, "Changed", attr)
 
     def execute(self, command):
-        r'''Called for table_screen popup.
+        r'''Top (final) level of execute heirarchy.
 
-        Calls self.screen.table.execute if it does not recognize the command.
+        Raises ValueError for unknown commands.
         '''
         trace(f"app.execute({command=})")
         if command in self.tables:
             trace("command is table, returning table_screen")
             return table_screen(self.tables[command], self.screen)
         match command:
-            case 'Back':
-                trace("app.execute: Back validating table")
-                if self.screen.validate():
-                    trace(f"app.execute: passed validate -> {self.screen.back=}")
-                    return self.screen.back
-                trace(f"app.execute: failed validate -> None")
-                return None
+            case 'Save':
+                trace(f"app.execute('Save'): not yet implemented")
+                self.reset_changed()
+                return 'REFRESH'
             case 'Exit':
                 trace(f"app.execute: Exit command -> 'APP_EXIT'")
                 return 'APP_EXIT'
             case 'Abort':
                 trace(f"app.execute: Abort command -> 'APP_ABORT'")
                 return 'APP_ABORT'
-        trace(f"app.execute({command=}): forwarding to screen")
-        ans = self.screen.table.execute(self, command)
-        trace(f"app.execute -> {ans}")
-        return ans
+            case _:
+                raise ValueError(f"app.execute: {command=} unknown")
 
 
 
