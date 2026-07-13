@@ -475,9 +475,9 @@
           screen_key and draw_body passes the index; process_mouse/process_key use the field object and
           self.active_field.screen_key for arithmetic.  Added tests/test_menu_screen.py.  Full suite 172 on Pi.
           NOTE: field_num is now fully gone (renamed screen_key everywhere).  The FR-1..FR-4 refactor is COMPLETE
-          and the field->screen contract is consistent again -- csv-inv-order is safe to run on the Pi (worth
-          doing to confirm menu nav + row-form Tab-select-all feel right before FR-5).  The menu question/answer
-          editable field still routes through the unified path and remains rough (its own cleanup later).
+          and the field->screen contract is consistent again.  VALIDATED: Bruce ran csv-inv-order on the Pi
+          after FR-4 -- menu nav and the row form looked OK (no re-verify needed before FR-5).  The menu
+          question/answer editable field still routes through the unified path and remains rough (cleanup later).
         - FR-5: resume Batch 4a -- table_screen cell focus via activate_field(field), screen_key=(row, col),
           read-only-table row focus = activate_field(row_fields[row][0]).  Then 4b (Left/Right, Tab), 4c (Esc,
           F1), then F9/F10/F2/DEL, then in-place editing (item 3).
