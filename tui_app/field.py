@@ -133,8 +133,8 @@ class read_only_field:
     can_edit = False
     changed = False
 
-    def __init__(self, field_num, text, field_shared, begin_y, paint=True, attr_pair=None, attr=0):
-        self.field_num = field_num   # index into fields list
+    def __init__(self, screen_key, text, field_shared, begin_y, paint=True, attr_pair=None, attr=0):
+        self.screen_key = screen_key   # screen-assigned id: an index, or (row, col) for table_screen
         self.text = text
         self.field_shared = field_shared
         self.begin_y = begin_y
@@ -193,6 +193,14 @@ class read_only_field:
 
     def set_attrs(self, reset=False):
         pass
+
+    def activate(self):
+        r'''Highlight this (read-only) field as the active/selected one.'''
+        self.reverse_attr()
+
+    def deactivate(self):
+        r'''Un-highlight; reverse_attr toggles, so this is the same call as activate().'''
+        self.reverse_attr()
 
     def chgat(self, start, length, attr):
         r'''This takes indexes into self.text.
@@ -293,8 +301,8 @@ class editable_field(read_only_field):
     selection_len = 0
     in_select = False
 
-    def __init__(self, field_num, text, field_shared, begin_y, paint=True, attr_pair=None, callback=None):
-        super().__init__(field_num, text, field_shared, begin_y, paint=paint, attr_pair=attr_pair)
+    def __init__(self, screen_key, text, field_shared, begin_y, paint=True, attr_pair=None, callback=None):
+        super().__init__(screen_key, text, field_shared, begin_y, paint=paint, attr_pair=attr_pair)
         self.callback = callback
 
     def get_text(self):
@@ -366,7 +374,7 @@ class editable_field(read_only_field):
         self.position = index
         self.selection_len = 0
         self.set_attrs()
-        self.app.screen.activate_field(self.field_num)
+        self.app.screen.activate_field(self)
 
     def set_selection(self, start, end):
         r'''if positive selection (end >= start):
@@ -386,7 +394,7 @@ class editable_field(read_only_field):
             self.position = start
             self.selection_len = length
             self.set_attrs()
-            self.app.screen.activate_field(self.field_num)
+            self.app.screen.activate_field(self)
 
     def process_mouse(self, mouse_event):
         r'''Caller ensures self.enclose on mouse_event
@@ -517,6 +525,12 @@ class editable_field(read_only_field):
                 self.set_position(pos + 1)
             else:
                 self.set_position(pos)
+
+    def activate(self):
+        r'''Select the whole value so the first typed char replaces it.'''
+        self.position = 0
+        self.selection_len = len(self.get_text())
+        self.set_attrs()
 
     def deactivate(self):
         self.set_attrs(reset=True)

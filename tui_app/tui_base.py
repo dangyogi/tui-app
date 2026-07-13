@@ -180,6 +180,7 @@ class screen:
 
     width = None
     popup = None
+    active_field = None   # the currently active field object (see activate_field), or None
 
     def __init__(self, title, back=None):
         r'''self.app is set by run.
@@ -251,6 +252,21 @@ class screen:
 
     def validate(self):
         return True
+
+    def activate_field(self, field):
+        r'''Make `field` the active field: un-highlight the previously active one and highlight this one.
+
+        Each field knows how to (un)highlight itself via activate()/deactivate(), so this one method serves
+        every screen.  Pass None to just clear the active field.  Re-activating the same field is a no-op, so
+        the redundant calls a field makes while editing don't disturb its cursor.
+        '''
+        if self.active_field is field:
+            return
+        if self.active_field is not None:
+            self.active_field.deactivate()
+        self.active_field = field
+        if field is not None:
+            field.activate()
 
     def execute(self, command):
         trace(f"screen.execute({command=})")

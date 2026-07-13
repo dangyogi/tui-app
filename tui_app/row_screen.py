@@ -68,18 +68,6 @@ class row_screen(tui_base.screen):
                 self.max_col_name_len = len(column.name)
         trace(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
 
-    def activate_field(self, field_num):
-        trace(f"row_screen.activate_field({field_num=})")
-        if self.active_field != field_num:
-            if self.active_field is not None:
-                self.fields[self.active_field].deactivate()
-            self.active_field = field_num
-            field = self.fields[field_num]
-            if field.position is None:
-                field.position = 0
-                field.selection_len = 0
-            field.set_attrs()
-
     def process_mouse(self, mouse_event):
         _, x, y, _, bstate = mouse_event
         trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
@@ -111,30 +99,28 @@ class row_screen(tui_base.screen):
             self.error_field = None
         self.clear_message()
         if self.active_field is not None:
-            key = self.fields[self.active_field].process_key(key)
+            key = self.active_field.process_key(key)
             if tui_base.event_handled(key):
                 return key
         if key == '\t':
-            active_field = self.active_field
-            if active_field is None:
+            if self.active_field is None:
                 offset = 0
             else:
-                offset = active_field + 1
+                offset = self.active_field.screen_key + 1
             for i in range(len(self.fields)):
-                active_field = (offset + i) % len(self.fields)
-                if self.fields[active_field].can_edit:
-                    self.activate_field(active_field)
+                idx = (offset + i) % len(self.fields)
+                if self.fields[idx].can_edit:
+                    self.activate_field(self.fields[idx])
                     return None
         elif key == 'KEY_BTAB':
-            active_field = self.active_field
-            if active_field is None:
+            if self.active_field is None:
                 offset = len(self.fields)
             else:
-                offset = active_field - 1
+                offset = self.active_field.screen_key - 1
             for i in range(len(self.fields)):
-                active_field = (offset - i) % len(self.fields)
-                if self.fields[active_field].can_edit:
-                    self.activate_field(active_field)
+                idx = (offset - i) % len(self.fields)
+                if self.fields[idx].can_edit:
+                    self.activate_field(self.fields[idx])
                     return None
         return key
 

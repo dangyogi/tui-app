@@ -9,8 +9,8 @@ from .field import field_shared, read_only_field, editable_field
 
 
 class action_field(read_only_field):
-    def __init__(self, action, field_shared, begin_y, attr_pair):
-        super().__init__(None, action.name, field_shared, begin_y, attr_pair=attr_pair)
+    def __init__(self, screen_key, action, field_shared, begin_y, attr_pair):
+        super().__init__(screen_key, action.name, field_shared, begin_y, attr_pair=attr_pair)
         self.action = action
 
     def enclose(self, y, x):
@@ -75,11 +75,11 @@ class menu_screen(tui_base.screen):
         trace(f"menu_screen.process_mouse({y=}, {x=}) in field {index=}, {field.name=}")
         match bstate:
             case tui_base.curses.BUTTON1_CLICKED if field.action.can_run:
-                self.activate_field(index)
+                self.activate_field(field)
                 self.clear_message()
                 return None
             case tui_base.curses.BUTTON1_DOUBLE_CLICKED if field.action.can_run:
-                self.activate_field(index)
+                self.activate_field(field)
                 self.clear_message()
                 return self.execute(field.action)
         return mouse_event
@@ -91,46 +91,36 @@ class menu_screen(tui_base.screen):
             if tui_base.event_handled(ans):
                 return ans
         if key == 'KEY_DOWN':
-            active_field = self.active_field
-            if active_field is None:
+            if self.active_field is None:
                 offset = 0
             else:
-                offset = active_field + 1
+                offset = self.active_field.screen_key + 1
             for i in range(len(self.fields)):
                 field_index = (offset + i) % len(self.fields)
                 if self.fields[field_index].action.can_run:
-                    self.activate_field(field_index)
+                    self.activate_field(self.fields[field_index])
                     self.clear_message()
                     return None
         elif key == 'KEY_UP':
-            active_field = self.active_field
-            if active_field is None:
+            if self.active_field is None:
                 offset = len(self.fields) - 1
             else:
-                offset = active_field - 1
+                offset = self.active_field.screen_key - 1
             for i in range(len(self.fields)):
                 field_index = (offset - i) % len(self.fields)
                 if self.fields[field_index].action.can_run:
-                    self.activate_field(field_index)
+                    self.activate_field(self.fields[field_index])
                     self.clear_message()
                     return None
         elif key == 'KEY_ENTER' or key == '\n' or key == ' ':
             if self.active_field is not None:
                 self.clear_message()
-                return self.execute(self.fields[self.active_field].action)
+                return self.execute(self.active_field.action)
         elif key == 'r':
             self.clear_message()
             action.reset()
             return 'REFRESH'
         return key
-
-    def activate_field(self, index):
-        if self.active_field is not None:
-            field = self.fields[self.active_field]
-            field.reverse_attr()
-        self.active_field = index
-        field = self.fields[self.active_field]
-        field.reverse_attr()
 
     def execute(self, action):
         trace(f"menu_screen.execute({action.name=})")
@@ -179,7 +169,7 @@ class menu_screen(tui_base.screen):
                 attr_pair = self.may_run_pair
             else:
                 attr_pair = self.must_run_pair
-            self.fields.append(action_field(action, shared, lineno, attr_pair))
+            self.fields.append(action_field(len(self.fields), action, shared, lineno, attr_pair))
             lineno += nlines
         if lineno > self.max_y:
             self.max_y = lineno

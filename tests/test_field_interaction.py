@@ -96,3 +96,18 @@ def test_select_backward(e_field):
     start_select(e_field, 5)
     select_backward(e_field, 5, 2)
 
+
+def test_editable_activate_selects_all(e_field):
+    e_field.activate()
+    assert e_field.position == 0
+    assert e_field.selection_len == len(e_field.get_text())
+    check_calls(e_field.chgat, (0, len(e_field.get_text()), e_field.selection_pair))
+
+
+def test_read_only_activate_deactivate_toggle(share_1_line):
+    f = read_only_field(0, "hello", share_1_line, begin_y=10, paint=False)
+    f.reverse_attr = Mock(name="reverse_attr")
+    f.activate()
+    f.deactivate()
+    assert f.reverse_attr.call_count == 2
+
