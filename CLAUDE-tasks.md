@@ -375,6 +375,97 @@
           Note: row_screen also sizes from edit_width, so editable numeric columns probably ought to get an
           edit_width set in the app (csv-inv-order).
 
+    - Step 2 coding progress -- cell-focus navigation for table_screen (started 2026-07-13):
+
+      - Working rhythm: SMALL edits.  Each batch is either "foundational" (later batches build on it, so it
+        is safe to accept even when partial) or a "stub to be replaced" (avoid writing those).  claude labels
+        each batch as one or the other.  Accept a correct partial step (it gets extended later); reject only
+        genuinely wrong edits.  (See the earlier discussion: the axis is build-on vs replace, not
+        complete vs incomplete.)
+
+      - Testing approach (decided 2026-07-13): reuse the test_field_interaction.py pattern -- `app` is a
+        unittest.mock.Mock (so app.stdscr absorbs every draw call), monkeypatch only curses bits that need a
+        live terminal (curses.color_pair -> identity; A_REVERSE etc. import fine cold), and mock any
+        screen-reading method (the inch/chgat-based highlight) to assert its call args.  NO full curses-module
+        mock is needed.  Tests live in tests/test_table_screen.py with FakeColumn/FakeTable fixtures and
+        assert navigation STATE (cur_row/cur_col/first_row/row_fields), not pixels.  Tests are folded into
+        each batch (can't write them all up front).  Run on the Pi:
+          ssh rpi-zero-2-w 'source ~/csv-venv/bin/activate && cd ~/tui-app && pytest -q'
+
+      - Data model the batches implement:
+        - focus is a CELL = (cur_row, cur_col).  cur_col indexes self.columns, constrained to
+          self.editable_cols; read-only/calculated columns are never focused.
+        - row_fields: dict {abs_row_index -> [one field per column, in column order]} for on-screen rows.
+          Column-parallel (includes read-only fields), so the focused field is row_fields[cur_row][cur_col],
+          and the same structure serves mouse hit-testing.  draw_rows must redraw read-only fields too on
+          scroll.
+        - movement (wired in a later batch): Up/Down = same column, adjacent row (clamp, auto-scroll);
+          Left/Right and Tab/Shift-Tab = prev/next editable column, wrapping to the adjacent row at the ends;
+          PgUp/PgDn/Home/End = scroll the viewport (if focus scrolls off -> deselect; finalize-on-off comes
+          with editing).  Esc = Back.  F1 = help (getkey returns 'KEY_F(1)', verified on the Pi).
+
+      - Batches:
+        - Batch 0 DONE (2026-07-13): fixed the compile break (case 'KEY_BTAB': -- was a bad `KET_BTAB`
+          capture pattern that made table_screen.py fail to import).
+        - Batch 1 DONE (2026-07-13, foundational): added focus state (cur_row/cur_col) in __init__ and
+          self.editable_cols in init(); created tests/test_table_screen.py (fixtures + editable_cols test).
+          Nothing consumes the new state yet.  Verified on the Pi: 161 passed.
+        - Batch 2 DONE (2026-07-13, foundational): draw_rows builds self.row_fields
+          ({abs_row_index -> [field per column]}, column-parallel), reset in draw_body, replacing the throwaway
+          self.fields; removed dead begin_x; trace logs the keys.  Added test_row_fields_built (mirrors the real
+          Column: FakeColumn.abbr defaults to name; FakeRow.get raises KeyError on unknown column).  Still
+          behavior-neutral.  Verified on the Pi: 162 passed.
+        - Batch 3 DONE (2026-07-13, foundational): scroll_up/scroll_down call _reindex_row_fields(), which
+          shifts begin_y on retained fields to their new screen line and drops scrolled-off entries (a pure
+          dict/attr update -- no screen reads -- safe on the live path); draw_rows adds newly-exposed rows.
+          Added test_scroll_up_maintains_row_fields / test_scroll_down_maintains_row_fields (assert keys and
+          begin_y).  Still behavior-neutral (nothing reads row_fields yet).  Verified on the Pi: 164 passed.
+        - Batch 4a (cell-focus movement) STARTED then SET ASIDE (2026-07-13): while wiring the cell highlight
+          it became clear the field/screen activate_field relationship should be refactored first, so the field
+          stays uniform across ALL screens (table_screen now needs field editing too).  NO 4a code is in the tree
+          (both attempts were rejected).  Resume 4a as FR-5 below.
+
+    - Field / activate_field refactor (design 2026-07-13) -- do BEFORE resuming 4a:
+
+      - Goal: one root activate_field usable by every screen; each field knows how to (un)highlight itself.
+
+      - Decisions (all confirmed with Bruce):
+        - Rename field.field_num -> field.screen_key: a screen-assigned identifier stored on the field (an int
+          index for row_screen/menu_screen; a (row, col) tuple for table_screen).  Screens use it for navigation
+          arithmetic.  Callers pass it positionally, so the rename is localized to field.py.
+        - screen.activate_field(field) takes the FIELD OBJECT and stores it (self.active_field = field, the
+          object, not a key).  set_position/set_selection call self.app.screen.activate_field(self).
+          activate_field(None) just clears focus.  Guard `if self.active_field is field: return`, so the
+          redundant calls the field makes while editing are no-ops and preserve the cursor.
+        - activate/deactivate live on the FIELDS:
+            read_only_field.activate() = self.reverse_attr();  deactivate() = self.reverse_attr()  (toggle)
+            editable_field.activate()  = select-all (position=0, selection_len=len(get_text()), set_attrs());
+              ALWAYS select-all on activate (re-entering a field re-selects the whole value -- deliberate uniform
+              "focus selects all"); deactivate unchanged (set_attrs(reset=True)).
+        - Root activate_field (tui_base.screen): guard; old.deactivate(); active_field=field; field.activate().
+        - Because the fields own the highlight, BOTH row_screen and menu_screen DELETE their activate_field
+          overrides and inherit the root one.
+        - active_field is now the OBJECT, so row_screen/menu_screen navigation switches from index-based
+          (self.fields[self.active_field]) to object-based (self.active_field.process_key / .action), and derives
+          the index for Tab/Up/Down arithmetic from self.active_field.screen_key.  menu action fields must be
+          given screen_key = their index (today created with screen_key=None).
+
+      - Ripples / risk: row_screen Tab now select-alls the value (was cursor-at-start).  row_screen and
+        menu_screen have NO unit tests and this changes their guts -- add tests AND drive csv-inv-order on the Pi.
+
+      - Not fixing now: the menu question/answer editable field routes through the unified path too; that feature
+        is already rough and gets its own cleanup later.
+
+      - Batches:
+        - FR-1: field.py -- rename field_num->screen_key; add activate/deactivate to read_only_field and
+          editable_field; set_position/set_selection -> activate_field(self).
+        - FR-2: tui_base.screen -- unified activate_field(field) (+ active_field=None class attr).
+        - FR-3: row_screen -- delete its activate_field; nav/routing -> object + screen_key; add test_row_screen.py.
+        - FR-4: menu_screen -- delete its activate_field; action fields get screen_key; nav/routing -> object.
+        - FR-5: resume Batch 4a -- table_screen cell focus via activate_field(field), screen_key=(row, col),
+          read-only-table row focus = activate_field(row_fields[row][0]).  Then 4b (Left/Right, Tab), 4c (Esc,
+          F1), then F9/F10/F2/DEL, then in-place editing (item 3).
+
 ### dependencies ###
 
 - it would nice, though not absolutely necessary, to remove tui-app's dependencies on csv-app.
