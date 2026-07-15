@@ -517,7 +517,13 @@
             get_col).  Full suite 183 on the Pi.  VERIFIED on the Pi: right-aligned highlight now lands on the
             text.
 
-          - 4a-3: Left/Right + Tab/Shift-Tab (editable-column movement, wrap to adjacent row).
+          - 4a-3 DONE (2026-07-15): _move_focus_col(delta) + process_key Left/Right and Tab/Shift-Tab move among
+            editable columns (via editable_cols), wrapping to the adjacent row's last/first editable col at the
+            ends; no-op in read-only tables; no move at the very first/last editable cell.  Tests added; full
+            suite 188.  Behavioral -- worth a Pi run (Left/Right/Tab now reach all editable columns).
+            Refinement (2026-07-15): direction-aware first keypress when nothing is selected --
+            Down -> top visible row, Up -> bottom visible row; Right -> first editable col, Left -> right-most
+            editable col.  (bottom = bottom VISIBLE row.)  Full suite 191.  VERIFIED on the Pi.
           - 4a-4: Esc = Back, F1 help.
           Then F9 row menu / F10 screen menu / F2 open row / DEL delete; then in-place editing (item 3).
 

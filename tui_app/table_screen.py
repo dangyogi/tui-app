@@ -97,6 +97,10 @@ class table_screen(tui_base.screen):
                 self._move_focus_row(1)
             case 'KEY_UP':                      # move cell focus up one row (same column)
                 self._move_focus_row(-1)
+            case 'KEY_RIGHT' | '\t':            # next editable column (wraps to next row)
+                self._move_focus_col(1)
+            case 'KEY_LEFT' | 'KEY_BTAB':       # previous editable column (wraps to previous row)
+                self._move_focus_col(-1)
             case 'KEY_NPAGE':                   # Page Down: scroll a page (focus may scroll off)
                 self.scroll_up(self.lines - 3)
             case 'KEY_PPAGE':                   # Page Up: scroll a page
@@ -195,12 +199,42 @@ class table_screen(tui_base.screen):
         if not self.rows:
             return
         if self.active_field is None:
-            row, col = self.first_row, self._default_col()
+            # first keypress: Down starts at the top visible row, Up at the bottom visible row
+            if delta > 0:
+                row = self.first_row
+            else:
+                row = min(self.first_row + (self.lines - 2) - 1, len(self.rows) - 1)
+            col = self._default_col()
         else:
             row, col = self.active_field.screen_key
             row = max(0, min(row + delta, len(self.rows) - 1))
         self._ensure_visible(row)
         self._focus_cell(row, col)
+
+    def _move_focus_col(self, delta):
+        r'''Move cell focus to the previous/next editable column (delta -1/+1), wrapping to the
+        adjacent row's last/first editable column at the ends.  No-op when there are no editable
+        columns.  With nothing focused yet, the first keypress focuses the top visible row's first
+        editable cell.
+        '''
+        if not self.rows or not self.editable_cols:
+            return
+        if self.active_field is None:
+            # first keypress: Right starts at the first editable col, Left at the last
+            col = self.editable_cols[0] if delta > 0 else self.editable_cols[-1]
+            self._ensure_visible(self.first_row)
+            self._focus_cell(self.first_row, col)
+            return
+        row, col = self.active_field.screen_key
+        ci = self.editable_cols.index(col) + delta
+        if ci < 0:
+            row, ci = row - 1, len(self.editable_cols) - 1     # wrap to previous row's last col
+        elif ci >= len(self.editable_cols):
+            row, ci = row + 1, 0                                # wrap to next row's first col
+        if not (0 <= row < len(self.rows)):
+            return                                             # at the very first/last cell: no move
+        self._ensure_visible(row)
+        self._focus_cell(row, self.editable_cols[ci])
 
     def execute(self, command):
         trace(f"table_screen.execute({command=})")

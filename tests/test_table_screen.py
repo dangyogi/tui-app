@@ -214,3 +214,71 @@ def test_arrow_down_autoscrolls_at_bottom(columns):
     scr.process_key('KEY_DOWN')                  # from bottom row -> scroll to reveal row 4
     assert scr.active_field.screen_key == (4, 1)
     assert scr.first_row == 1
+
+
+def test_up_first_keypress_focuses_bottom_visible(columns):
+    scr = make_drawn_screen(columns, 10)         # visible rows 0..3
+    assert scr.active_field is None
+    scr.process_key('KEY_UP')
+    assert scr.active_field.screen_key == (3, 1)  # bottom visible row, first editable col
+
+
+def test_left_first_keypress_focuses_rightmost_col(columns):
+    scr = make_drawn_screen(columns, 5)
+    assert scr.active_field is None
+    scr.process_key('KEY_LEFT')
+    assert scr.active_field.screen_key == (0, 3)  # top visible row, right-most editable col
+
+
+def test_right_first_keypress_focuses_leftmost_col(columns):
+    scr = make_drawn_screen(columns, 5)
+    scr.process_key('KEY_RIGHT')
+    assert scr.active_field.screen_key == (0, 1)  # top visible row, first editable col
+
+
+def test_right_moves_to_next_editable_col_then_wraps(columns):
+    scr = make_drawn_screen(columns, 5)          # editable_cols == [1, 3]
+    scr.process_key('KEY_DOWN')                  # focus (0, 1)
+    scr.process_key('KEY_RIGHT')                 # -> (0, 3)
+    assert scr.active_field.screen_key == (0, 3)
+    scr.process_key('KEY_RIGHT')                 # last editable col -> wrap to next row's first
+    assert scr.active_field.screen_key == (1, 1)
+
+
+def test_left_wraps_to_previous_row(columns):
+    scr = make_drawn_screen(columns, 5)
+    scr.process_key('KEY_DOWN')                  # (0, 1)
+    scr.process_key('KEY_RIGHT')                 # (0, 3)
+    scr.process_key('KEY_RIGHT')                 # (1, 1)
+    scr.process_key('KEY_LEFT')                  # first editable col -> wrap to prev row's last
+    assert scr.active_field.screen_key == (0, 3)
+
+
+def test_left_at_very_first_cell_is_noop(columns):
+    scr = make_drawn_screen(columns, 5)
+    scr.process_key('KEY_DOWN')                  # (0, 1) -- the very first editable cell
+    scr.process_key('KEY_LEFT')                  # nowhere before it -> no move
+    assert scr.active_field.screen_key == (0, 1)
+
+
+def test_tab_and_shift_tab_alias_right_and_left(columns):
+    scr = make_drawn_screen(columns, 5)
+    scr.process_key('KEY_DOWN')                  # (0, 1)
+    scr.process_key('\t')                        # like Right -> (0, 3)
+    assert scr.active_field.screen_key == (0, 3)
+    scr.process_key('KEY_BTAB')                  # like Left -> (0, 1)
+    assert scr.active_field.screen_key == (0, 1)
+
+
+def test_left_right_noop_in_read_only_table():
+    cols = [FakeColumn("a", min_width=5), FakeColumn("b", min_width=5)]   # no editable columns
+    rows = [FakeRow(a=f"a{i}", b=f"b{i}") for i in range(3)]
+    scr = table_screen(FakeTable("RO", cols, rows))
+    scr.app = Mock(name="app")
+    scr.lines = 24
+    scr.cols = 80
+    scr.init()
+    scr.draw_body()
+    assert scr.editable_cols == []
+    scr.process_key('KEY_RIGHT')
+    assert scr.active_field is None
