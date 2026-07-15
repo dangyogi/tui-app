@@ -19,13 +19,8 @@ class table_screen(tui_base.screen):
         self.first_row = 0         # index into self.rows of top row on screen
         self.validate_fn = validate_fn
         self.select = select
-        self.selected_row = None   # index into self.rows, first column is A_REVERSEd
-        # cell focus (row x column) for the new cell-focus navigation, wired in later batches.
-        # (selected_row will be retired once movement uses these.)
-        self.cur_row = None        # index into self.rows of the focused cell's row
-        self.cur_col = None        # index into self.columns of the focused column; always one of
-                                   # self.editable_cols.  row_fields holds one field per column in
-                                   # column order, so the focused field is row_fields[cur_row][cur_col].
+        # Cell focus is the base screen's self.active_field (the focused field object); its cell is
+        # active_field.screen_key == (row, col).  self.editable_cols (set in init) drives Left/Right.
 
     @property
     def screen_popup_commands(self):
@@ -96,45 +91,23 @@ class table_screen(tui_base.screen):
             key = self.popup.process_key(key)
             if tui_base.event_handled(key):
                 return key
-        trace(f"screen.process_key({key=})")
+        trace(f"table_screen.process_key({key=})")
         match key:
-            case '\t':
-                if self.selected_row is not None:
-                    pass # FIX: ??.reverse_attr()
-                if self.selected_row is None or self.selected_row >= self.first_row + (self.lines - 2) - 1:
-                    self.selected_row = self.first_row
-                else:
-                    self.selected_row += 1
-                pass # FIX: ??.reverse_attr()
-            case 'KEY_BTAB':
-                if self.selected_row is not None:
-                    pass # FIX: ??.reverse_attr()
-                if self.selected_row is None or self.selected_row >= self.first_row + (self.lines - 2) - 1:
-                    self.selected_row = self.first_row + (self.lines - 2) - 1  # last line
-                else:
-                    self.selected_row -= 1
-                pass # FIX: ??.reverse_attr()
-            case 'KEY_DOWN':
-                self.scroll_up(self.scroll_amount)
-            case 'KEY_UP':
-                self.scroll_down(self.scroll_amount)
-            case 'KEY_PPAGE':  # page down
-                self.scroll_down(self.lines - 3)
-            case 'KEY_NPAGE':  # page up
+            case 'KEY_DOWN':                    # move cell focus down one row (same column)
+                self._move_focus_row(1)
+            case 'KEY_UP':                      # move cell focus up one row (same column)
+                self._move_focus_row(-1)
+            case 'KEY_NPAGE':                   # Page Down: scroll a page (focus may scroll off)
                 self.scroll_up(self.lines - 3)
-            case 'KEY_HOME':
+            case 'KEY_PPAGE':                   # Page Up: scroll a page
+                self.scroll_down(self.lines - 3)
+            case 'KEY_HOME':                    # scroll to the top
                 if self.first_row:
                     self.scroll_down(self.first_row)
-            case 'KEY_END':
+            case 'KEY_END':                     # scroll to the bottom
                 rows_left = len(self.rows) - self.first_row
                 if rows_left > self.lines - 2:
                     self.scroll_up(rows_left - (self.lines - 3))
-           #case 'p':
-           #    self.app.stdscr.move(4, 4)
-           #case 'r':
-           #    self.app.stdscr.chgat(5, 4, 1, tui_base.curses.A_REVERSE)  # matches curses.curs_set(1) (1 = normal)
-           #case 'u':
-           #    self.app.stdscr.chgat(6, 4, 1, tui_base.curses.A_UNDERLINE)  # works, not sure how useful it is...
             case _:
                 return key
 
@@ -146,9 +119,6 @@ class table_screen(tui_base.screen):
             trace(f"adjusted {nlines=}")
         if nlines > 0:
             self.first_row += nlines
-            if self.selected_row is not None and self.selected_row < self.first_row:
-                # selected row will be deleted, so no need to un-reverse it...
-                self.selected_row = None
             self._reindex_row_fields()
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
@@ -168,9 +138,6 @@ class table_screen(tui_base.screen):
         assert nlines >= 0, f"{nlines=} < 0"
         if nlines:
             self.first_row -= nlines
-            if self.selected_row is not None and self.selected_row >= self.first_row + self.lines - 2:
-                # selected row will be deleted, so no need to un-reverse it...
-                self.selected_row = None
             self._reindex_row_fields()
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
@@ -195,7 +162,45 @@ class table_screen(tui_base.screen):
                     field.begin_y = new_line
             else:
                 del self.row_fields[row_index]
+        # if the focused cell's row scrolled off-screen, drop focus (its row is gone from row_fields)
+        if self.active_field is not None and self.active_field.screen_key[0] not in self.row_fields:
+            self.active_field = None
         trace(f"_reindex_row_fields: keys now {sorted(self.row_fields)}, {self.first_row=}")
+
+    def _focus_cell(self, row, col):
+        r'''Focus the cell at (row, col) -- col is 0 for a read-only table.  The base activate_field
+        deactivates the previously focused cell and highlights this one (editable -> select-all,
+        read-only -> reverse_attr).  The row must be on screen (present in row_fields).
+        '''
+        self.activate_field(self.row_fields[row][col])
+
+    def _default_col(self):
+        r'''Column to focus when there is no current column: the first editable column, or 0 for a
+        read-only table (whole-row focus on the first field).
+        '''
+        return self.editable_cols[0] if self.editable_cols else 0
+
+    def _ensure_visible(self, row):
+        r'''Scroll the viewport minimally so that row index `row` is on screen.'''
+        visible = self.lines - 2
+        if row < self.first_row:
+            self.scroll_down(self.first_row - row)
+        elif row > self.first_row + visible - 1:
+            self.scroll_up(row - (self.first_row + visible - 1))
+
+    def _move_focus_row(self, delta):
+        r'''Move cell focus up/down by delta rows, keeping the same column (auto-scroll to stay
+        visible).  With nothing focused yet, the first keypress focuses the top visible row.
+        '''
+        if not self.rows:
+            return
+        if self.active_field is None:
+            row, col = self.first_row, self._default_col()
+        else:
+            row, col = self.active_field.screen_key
+            row = max(0, min(row + delta, len(self.rows) - 1))
+        self._ensure_visible(row)
+        self._focus_cell(row, col)
 
     def execute(self, command):
         trace(f"table_screen.execute({command=})")
@@ -215,6 +220,7 @@ class table_screen(tui_base.screen):
         max_lens = []
         column_names = []
         self.row_fields = {}   # {abs_row_index -> [one field per column]}, (re)built by draw_rows
+        self.active_field = None   # a full (re)draw recreates fields, so focus is dropped (e.g. on resize)
         self.field_shareds = []
         begin_x = 0
         for column in self.columns:
@@ -258,24 +264,18 @@ class table_screen(tui_base.screen):
         if nlines is None:
             nlines = self.lines - first_line
         trace(f"draw_rows({first_row=}, {first_line=}, {nlines=})")
-        if self.selected_row is None:
-            selected_lineno = -1
-        else:
-            selected_lineno = first_line + (self.selected_row - first_row)
         for lineno, row in enumerate(self.rows[first_row:], first_line):
             if lineno - first_line == nlines:
                 break
             row_index = first_row + (lineno - first_line)
             fields = []
-            for column, field_shared in zip(self.columns, self.field_shareds):
+            for col, (column, field_shared) in enumerate(zip(self.columns, self.field_shareds)):
                 if column.can_edit:
                     f_type = editable_field
                 else:
                     f_type = read_only_field
-                fields.append(f_type(len(fields), row.get(column.name), field_shared, lineno,
+                fields.append(f_type((row_index, col), row.get(column.name), field_shared, lineno,
                                      attr_pair=column.column_attr_pair(row)))
             self.row_fields[row_index] = fields
-            if lineno == selected_lineno:
-                fields[0].reverse_attr()
         trace(f"draw_rows: row_fields keys now {sorted(self.row_fields)}")
 

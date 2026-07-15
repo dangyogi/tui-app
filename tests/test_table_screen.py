@@ -93,8 +93,7 @@ def test_editable_cols(screen):
 
 
 def test_focus_starts_unset(screen):
-    assert screen.cur_row is None
-    assert screen.cur_col is None
+    assert screen.active_field is None
 
 
 def make_rows(n):
@@ -150,3 +149,68 @@ def test_scroll_down_maintains_row_fields(columns):
     assert sorted(scr.row_fields) == [1, 2, 3, 4]
     assert scr.row_fields[1][0].begin_y == 2      # newly exposed row at the top line
     assert 5 not in scr.row_fields                # scrolled off the bottom
+
+
+def test_screen_key_is_row_col(columns):
+    scr = make_drawn_screen(columns, 3)
+    assert scr.row_fields[0][1].screen_key == (0, 1)
+    assert scr.row_fields[2][3].screen_key == (2, 3)
+
+
+def test_focus_cell(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(0, 1)                         # editable column
+    field = scr.row_fields[0][1]
+    assert scr.active_field is field
+    assert field.position == 0
+    assert field.selection_len == len(field.get_text())   # editable activate = select-all
+    scr._focus_cell(2, 3)                         # move focus to another cell
+    assert scr.active_field is scr.row_fields[2][3]
+
+
+def test_focus_dropped_when_scrolled_off(columns):
+    scr = make_drawn_screen(columns, 10)          # visible rows 0..3
+    scr._focus_cell(0, 1)
+    assert scr.active_field is not None
+    scr.scroll_up(2)                              # rows 0,1 scroll off the top
+    assert scr.active_field is None
+
+
+def test_focus_dropped_on_full_redraw(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(0, 1)
+    assert scr.active_field is not None
+    scr.draw_body()                              # full redraw recreates fields -> focus dropped
+    assert scr.active_field is None
+
+
+def test_first_keypress_focuses_top_visible_first_editable(columns):
+    scr = make_drawn_screen(columns, 5)
+    assert scr.active_field is None
+    scr.process_key('KEY_DOWN')                  # first keypress -> top visible row, first editable col (1)
+    assert scr.active_field is scr.row_fields[0][1]
+
+
+def test_arrow_down_moves_focus_same_column(columns):
+    scr = make_drawn_screen(columns, 5)
+    scr.process_key('KEY_DOWN')                  # focus (0, 1)
+    scr.process_key('KEY_DOWN')                  # -> (1, 1)
+    assert scr.active_field.screen_key == (1, 1)
+
+
+def test_arrow_up_clamps_at_top(columns):
+    scr = make_drawn_screen(columns, 5)
+    scr.process_key('KEY_DOWN')                  # focus (0, 1)
+    scr.process_key('KEY_UP')                    # can't go above row 0
+    assert scr.active_field.screen_key == (0, 1)
+
+
+def test_arrow_down_autoscrolls_at_bottom(columns):
+    scr = make_drawn_screen(columns, 10)         # visible 4 rows: 0..3
+    for _ in range(4):                           # first -> (0,1), then down to (3,1)
+        scr.process_key('KEY_DOWN')
+    assert scr.active_field.screen_key == (3, 1)
+    assert scr.first_row == 0
+    scr.process_key('KEY_DOWN')                  # from bottom row -> scroll to reveal row 4
+    assert scr.active_field.screen_key == (4, 1)
+    assert scr.first_row == 1

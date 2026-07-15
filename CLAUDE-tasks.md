@@ -478,9 +478,48 @@
           and the field->screen contract is consistent again.  VALIDATED: Bruce ran csv-inv-order on the Pi
           after FR-4 -- menu nav and the row form looked OK (no re-verify needed before FR-5).  The menu
           question/answer editable field still routes through the unified path and remains rough (cleanup later).
-        - FR-5: resume Batch 4a -- table_screen cell focus via activate_field(field), screen_key=(row, col),
-          read-only-table row focus = activate_field(row_fields[row][0]).  Then 4b (Left/Right, Tab), 4c (Esc,
-          F1), then F9/F10/F2/DEL, then in-place editing (item 3).
+        - FR-5 = resume Batch 4a (table_screen cell focus, using the refactored activate_field).  DECISION:
+          retired cur_row/cur_col; focus is the base self.active_field, and the focused cell is
+          active_field.screen_key == (row, col).  Sub-batches:
+          - 4a-1 DONE (2026-07-15): draw_rows gives each cell screen_key=(row,col); _focus_cell(row,col) ->
+            activate_field(row_fields[row][col]) (read-only table uses col 0); draw_body drops focus on a full
+            redraw; _reindex_row_fields drops focus when the focused row scrolls off; removed cur_row/cur_col.
+            Tests added (screen_key, _focus_cell, focus-drop on scroll-off/redraw).  Full suite 176 on the Pi.
+            NOTE: selected_row still present (dormant); retired in 4a-2 with the process_key rewrite.
+          - 4a-2 DONE (2026-07-15): rewrote process_key -- Up/Down call _move_focus_row (same column,
+            auto-scroll via _ensure_visible); first keypress focuses the top visible row's first editable column
+            (read-only table -> col 0, via _default_col).  PgUp/PgDn/Home/End still scroll.  Retired selected_row
+            entirely (removed from __init__, draw_rows highlight, and scroll null logic).  Tests added; full suite
+            180.  FIRST VISIBLE BEHAVIOR CHANGE -- worth running csv-inv-order on the Pi (arrows now move a
+            highlighted cell; Left/Right not wired until 4a-3, so you can only move within one column so far).
+          - 4a-2b DONE (2026-07-15): RIGHT-ALIGN HIGHLIGHT BUG (field.py) -- found on the Pi after 4a-2.
+            Symptom: focusing a right-aligned cell highlights the LEFT padding, not the text.
+            Root cause: field.py's index->screen-x mapping (gen_locations, and also get_col/to_index) computes
+            x = begin_x + (index - start), which assumes text starts at begin_x -- true for left alignment.  But
+            align() right-justifies by PREPENDING pad = ncols - len(content) spaces, so the text actually starts
+            at begin_x + pad; the mapping omits pad.  Pre-existing bug, exposed by 4a-2 (right-aligned columns are
+            now focus-highlighted; row_screen fields are all left-aligned, so it never showed before).
+            Fix approach = (b) EXACT (Bruce's choice): align()/wrap() expose the per-line pad; the field records
+            self.pads[] and adds it in gen_locations/get_col/to_index.  (NOT the (a) leading-space heuristic.)
+            Sub-steps:
+              - Step 1: align() returns (pad, padded_line); wrap() yields (start, pad, line) triples;
+                blank_lines() yields (None, 0, spaces); update the test_field_shared wrap tests to 3-tuples.
+                Pure logic -- verify wrap tests green.
+              - Step 2: paint() records self.pads[] parallel to self.starts[]; gen_locations adds self.pads[lineno]
+                to x (fixes the visible highlight).  Add a right-align highlight test; verify on the Pi.
+              - Step 3: get_col()/to_index() add the pad too, so right-aligned click-to-position and
+                up/down-in-field stay consistent (not exercised until editing, but keeps the core correct).
+            Edge case noted: empty right-aligned cell -> pad recorded as 0 (cursor shows at the left edge); rare,
+            refine later if it matters.
+            STATUS: all 3 steps done -- align()/wrap() yield pad; field records self.pads[]; gen_locations,
+            get_col, and to_index add it; read_only_field.__init__ defaults pads=[0]*nlines so paint=False tests
+            work.  Tests updated (wrap 3-tuples, align tuple) and added (right-align gen_locations/to_index/
+            get_col).  Full suite 183 on the Pi.  VERIFIED on the Pi: right-aligned highlight now lands on the
+            text.
+
+          - 4a-3: Left/Right + Tab/Shift-Tab (editable-column movement, wrap to adjacent row).
+          - 4a-4: Esc = Back, F1 help.
+          Then F9 row menu / F10 screen menu / F2 open row / DEL delete; then in-place editing (item 3).
 
 ### dependencies ###
 
