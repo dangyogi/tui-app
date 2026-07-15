@@ -111,3 +111,30 @@ def test_read_only_activate_deactivate_toggle(share_1_line):
     f.deactivate()
     assert f.reverse_attr.call_count == 2
 
+
+def test_gen_locations_right_align_offsets_by_pad():
+    fs = field_shared("f", nlines=1, begin_x=30, ncols=20, app=Mock(name="app"), alignment="right")
+    f = read_only_field(0, "42", fs, begin_y=10)          # "42" right-aligned in 20 cols -> pad 18
+    assert f.pads == [18]
+    # highlighting text indices 0..2 must land on the digits (begin_x + pad), not the left padding
+    assert list(f.gen_locations(0, 2)) == [(10, 30 + 18, 2)]
+
+
+def test_gen_locations_left_align_no_offset():
+    fs = field_shared("f", nlines=1, begin_x=30, ncols=20, app=Mock(name="app"), alignment="left")
+    f = read_only_field(0, "42", fs, begin_y=10)
+    assert f.pads == [0]
+    assert list(f.gen_locations(0, 2)) == [(10, 30, 2)]
+
+
+def test_to_index_and_get_col_right_align():
+    fs = field_shared("f", nlines=1, begin_x=30, ncols=20, app=Mock(name="app"), alignment="right")
+    f = editable_field(0, "42", fs, begin_y=10)          # painted -> starts=[0], pads=[18]
+    # clicking on the digits maps to the right text index
+    assert f.to_index(10, 30 + 18) == 0                  # '4'
+    assert f.to_index(10, 30 + 19) == 1                  # '2'
+    assert f.to_index(10, 30) == 0                       # click on the left padding -> start of text
+    # get_col maps an index back to its padded column
+    assert f.get_col(0) == 18
+    assert f.get_col(1) == 19
+

@@ -54,7 +54,7 @@ def test_first_non_blank(share_1_line, start, ans):
     ("asdfasdfasdf sdf", "asdfasdfasdf sdf    "),
 ])
 def test_align(share_1_line, text_in, text_out):
-    assert share_1_line.align(text_in) == text_out
+    assert share_1_line.align(text_in) == (0, text_out)
 
 
 def test_wrap0(share_1_line):
@@ -66,7 +66,7 @@ def test_wrap0(share_1_line):
     lines = list(share_1_line.wrap(text, scroll))
     assert len(lines) == 1
 
-    start_offset, rendered_line = lines[0]
+    start_offset, pad, rendered_line = lines[0]
     assert len(rendered_line) == 20
 
     # When scroll == 0, the start offset should be exactly 0
@@ -85,7 +85,7 @@ def test_wrap0_empty(share_1_line):
     lines = list(share_1_line.wrap(text, scroll))
     assert len(lines) == 1
 
-    start_offset, rendered_line = lines[0]
+    start_offset, pad, rendered_line = lines[0]
     assert start_offset == 0
     assert rendered_line == "                    "
 
@@ -101,7 +101,7 @@ def test_cut_at_both_ends(share_1_line, scroll):
 
     lines = list(share_1_line.wrap(text, scroll))
     assert len(lines) == 1
-    start_index, rendered_line = lines[0]
+    start_index, pad, rendered_line = lines[0]
     assert len(rendered_line) == 20
     assert start_index == scroll
 
@@ -118,7 +118,7 @@ def test_right_fits(share_1_line, scroll):
 
     lines = list(share_1_line.wrap(text, scroll))
     assert len(lines) == 1
-    start_index, rendered_line = lines[0]
+    start_index, pad, rendered_line = lines[0]
     assert len(rendered_line) == 20
     assert start_index == scroll
     assert rendered_line.startswith("[...] ")
@@ -127,11 +127,11 @@ def test_right_fits(share_1_line, scroll):
     assert rendered_line[len(text) - 1 - scroll] == text[-1]
 
 
-@pytest.mark.parametrize("field_shared, result", [
-    (mk_share_1_line("left"),  "Hello World!        "),
-    (mk_share_1_line("right"), "        Hello World!"),
+@pytest.mark.parametrize("field_shared, pad, result", [
+    (mk_share_1_line("left"),  0, "Hello World!        "),
+    (mk_share_1_line("right"), 8, "        Hello World!"),
 ])
-def test_short_text_blank_padding(field_shared, result):
+def test_short_text_blank_padding(field_shared, pad, result):
     """Ensures short lines fill the layout matrix cleanly with empty trailing whitespace."""
                  #          1         2         3
                  #0123456789012345678901234567890
@@ -139,9 +139,10 @@ def test_short_text_blank_padding(field_shared, result):
 
     lines = list(field_shared.wrap(short_text))
     assert len(lines) == 1
-    start_index, rendered_line = lines[0]
+    start_index, line_pad, rendered_line = lines[0]
     assert len(rendered_line) == 20
     assert start_index == 0
+    assert line_pad == pad
 
     assert rendered_line == result
 
@@ -156,33 +157,33 @@ def test_multi_line(share_3_lines, text):
     lines = list(share_3_lines.wrap(text))
     assert len(lines) == 3
                             #12345678901234567890
-    assert lines[0] == ( 0, "but are created     ")
-    assert lines[1] == (24, "automatically when  ")
-    assert lines[2] == (43, "test functions [...]")
+    assert lines[0] == ( 0, 0, "but are created     ")
+    assert lines[1] == (24, 0, "automatically when  ")
+    assert lines[2] == (43, 0, "test functions [...]")
 
 
 def test_multi_line2(share_3_lines, text):
     lines = list(share_3_lines.wrap(text, scroll=27))
     assert len(lines) == 3
                             #12345678901234567890
-    assert lines[0] == (27, "[...] ally when test")
-    assert lines[1] == (48, "functions request   ")
-    assert lines[2] == (66, "them as parameters. ")
+    assert lines[0] == (27, 0, "[...] ally when test")
+    assert lines[1] == (48, 0, "functions request   ")
+    assert lines[2] == (66, 0, "them as parameters. ")
 
 
 def test_multi_line3(share_3_lines, text):
     lines = list(share_3_lines.wrap(text, scroll=60))
     assert len(lines) == 3
                               #12345678901234567890
-    assert lines[0] == (60,   "[...] them as       ")
-    assert lines[1] == (74,   "parameters.         ")
-    assert lines[2] == (None, "                    ")
+    assert lines[0] == (60,   0, "[...] them as       ")
+    assert lines[1] == (74,   0, "parameters.         ")
+    assert lines[2] == (None, 0, "                    ")
 
 
 def test_multi_line_empty(share_3_lines):
     lines = list(share_3_lines.wrap(""))
     assert len(lines) == 3
                               #12345678901234567890
-    assert lines[0] == (0,    "                    ")
-    assert lines[1] == (None, "                    ")
-    assert lines[2] == (None, "                    ")
+    assert lines[0] == (0,    0, "                    ")
+    assert lines[1] == (None, 0, "                    ")
+    assert lines[2] == (None, 0, "                    ")

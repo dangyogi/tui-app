@@ -26,7 +26,9 @@ class field_shared:
         self.right_placeholder = right_placeholder
 
     def wrap(self, text, scroll=0):
-        r'''Generates (index, line) pairs.
+        r'''Generates (index, pad, line) triples: index is the text offset of the line's first char
+        (None for a blank line), pad is the left x-offset of the text within the ncols-wide line
+        (0 for left alignment; the leading-pad width for right alignment), and line is the padded text.
         '''
         text = text.rstrip()
         if scroll:
@@ -39,7 +41,7 @@ class field_shared:
         for lineno in range(self.nlines):
             if offset >= len(wtext):
                 if lineno == 0:  # then offset == 0 and len(wtext) == 0
-                    yield 0, ' ' * self.ncols
+                    yield 0, 0, ' ' * self.ncols
                     lineno += 1
                 if lineno < self.nlines:
                     yield from self.blank_lines(self.nlines - lineno)
@@ -47,7 +49,7 @@ class field_shared:
             next = offset + self.ncols
             if next >= len(wtext):
                 # next past end of wtext
-                yield start_offset + offset, self.align(wtext[offset:])
+                yield start_offset + offset, *self.align(wtext[offset:])
                 yield from self.blank_lines(self.nlines - lineno - 1)
                 break
             elif lineno + 1 == self.nlines:
@@ -55,19 +57,19 @@ class field_shared:
                 # add self.right_placeholder
                 final_line = wtext[offset: next - len(self.right_placeholder)] + self.right_placeholder
                 trace(f"{self.name}.wrap: {offset=}, {next=}, {final_line=!r}")
-                yield start_offset + offset, self.align(final_line)
+                yield start_offset + offset, *self.align(final_line)
             elif wtext[next] == ' ':
                 # next hit in between words.
                 # find last non-blank char on line
                 first_non_blank_left = self.first_non_blank_left(wtext, next)
-                yield start_offset + offset, self.align(wtext[offset: first_non_blank_left + 1])
+                yield start_offset + offset, *self.align(wtext[offset: first_non_blank_left + 1])
                 offset = self.first_non_blank(wtext, next + 1)
             else:
                 # next hit in the middle of a word.
                 i = wtext.rfind(' ', next - self.max_waste, next)
                 if i != -1:
                     next = i + 1
-                yield start_offset + offset, self.align(wtext[offset: next])
+                yield start_offset + offset, *self.align(wtext[offset: next])
                 offset = next
 
     def first_non_blank_left(self, text, end):
@@ -111,21 +113,25 @@ class field_shared:
         return index
 
     def align(self, line):
-        pad = ' ' * (self.ncols - len(line))
-        if not pad:
-            return line
+        r'''Pad `line` out to ncols.  Returns (pad, padded_line), where pad is the left x-offset of
+        the text within the padded line: 0 for left alignment (padding added on the right), and
+        ncols-len(line) for right alignment (padding added on the left).
+        '''
+        pad = self.ncols - len(line)
+        if pad <= 0:
+            return 0, line
         match self.alignment:
             case "left":
-                return line + pad
+                return 0, line + ' ' * pad
             case "right":
-                return pad + line
+                return pad, ' ' * pad + line
             case _:
                 raise ValueError(f'field_shared.align: illegal {self.alignment=!r}, '
                                  f'expected "left" or "right"')
 
     def blank_lines(self, nlines):
         for _ in range(nlines):
-            yield None, ' ' * self.ncols
+            yield None, 0, ' ' * self.ncols
 
 
 class read_only_field:
@@ -139,6 +145,7 @@ class read_only_field:
         self.field_shared = field_shared
         self.begin_y = begin_y
         self.scroll = 0
+        self.pads = [0] * self.nlines   # per-line left text-offset; paint() overrides (right-align)
         if attr_pair is None:
             self.attr_pair = self.default_attr_pair
         else:
@@ -183,11 +190,13 @@ class read_only_field:
         # FIX: Recalculate scroll position
        #trace(f"{self.name}.paint({self.text=!r})")
         self.starts = []
+        self.pads = []     # per-line left x-offset of the text (0 for left-aligned)
         stdscr = self.app.stdscr
         attr = curses.color_pair(self.attr_pair) + self.attr
-        for y, (start, line) in zip(range(self.begin_y, self.begin_y + self.nlines),
-                                    self.field_shared.wrap(self.text, self.scroll)):
+        for y, (start, pad, line) in zip(range(self.begin_y, self.begin_y + self.nlines),
+                                         self.field_shared.wrap(self.text, self.scroll)):
             self.starts.append(start)
+            self.pads.append(pad)
             stdscr.addstr(y, self.begin_x, line, attr)
         self.set_attrs()
 
@@ -249,7 +258,8 @@ class read_only_field:
                     end_x = min(end, next_start) - this_start
                    #trace(f"{self.name}.gen_locations.gen_line: {skip=}, {start_x=}, {end_x=}")
                     if end_x > skip and end_x > start_x:
-                        yield self.begin_y + lineno, self.begin_x + start_x, end_x - start_x
+                        yield self.begin_y + lineno, self.begin_x + self.pads[lineno] + start_x, \
+                              end_x - start_x
 
         trace(f"{self.name}.gen_locations({start=}, {end=})")
         for lineno in range(self.nlines):
@@ -274,7 +284,7 @@ class read_only_field:
         return None
 
     def get_col(self, index):
-        r'''Returns None if index not visible.
+        r'''Returns None if index not visible.  Includes the line's left pad (for right alignment).
         '''
         if index < self.starts[0]:
             return None
@@ -282,12 +292,12 @@ class read_only_field:
             start = self.starts[lineno]
             if start is None:
                 if index < self.starts[lineno - 1] + self.ncols:
-                    return min(self.ncols - 1, index - self.starts[lineno - 1])
+                    return min(self.ncols - 1, self.pads[lineno - 1] + index - self.starts[lineno - 1])
                 return None
             if index < start:
-                return min(self.ncols - 1, index - self.starts[lineno - 1])
+                return min(self.ncols - 1, self.pads[lineno - 1] + index - self.starts[lineno - 1])
         if index < self.starts[-1] + self.ncols:
-            return min(self.ncols - 1, index - self.starts[-1])
+            return min(self.ncols - 1, self.pads[-1] + index - self.starts[-1])
         return None
 
 
@@ -344,7 +354,7 @@ class editable_field(read_only_field):
                 end_x = start_x + self.ncols - len(self.field_shared.right_placeholder)
             else:
                 end_x = len(self.text)
-            ans = start_x + x
+            ans = start_x + max(0, x - self.pads[y])
             if ans >= end_x:
                 ans = end_x - 1
        #trace(f"{self.name}.to_index({y=}, {x=}) -> {ans}")
