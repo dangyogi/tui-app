@@ -530,7 +530,16 @@
             Tests added; full suite 193.
           BATCH 4a COMPLETE (cell-focus navigation): 4a-1..4a-4 + the 4a-2b field right-align fix.  Mouse events
           for the help/nav to be added later.
-          Then F9 row menu / F10 screen menu / F2 open row / DEL delete; then in-place editing (item 3).
+
+          - NEXT (per Bruce, start here next session): F9/F10 MENUS.  These open, from the keyboard, the SAME two
+            popups that right-click already builds in table_screen.process_mouse:
+              F10 = screen menu (screen_popup_commands: table names, Back, Exit/Abort) -- the popup made at y<2.
+              F9  = row menu for the FOCUSED row (row.row_popup_commands: View/Edit, Delete, app cmds) -- the
+                    per-row popup.  Needs a focused row: use self.active_field.screen_key[0]; if nothing focused,
+                    either no-op or focus first visible row first (decide then).
+            So this is mostly wiring two process_key cases to the existing popup_menu construction (factor the
+            popup-building out of process_mouse so key + mouse share it).  Then F2 open row / DEL delete, then
+            in-place editing (item 3).
 
 ### dependencies ###
 
