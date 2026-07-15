@@ -93,6 +93,10 @@ class table_screen(tui_base.screen):
                 return key
         trace(f"table_screen.process_key({key=})")
         match key:
+            case '\x1B':                        # Esc -> Back
+                return self.execute('Back')
+            case 'KEY_F(1)':                    # Help
+                self.show_help()
             case 'KEY_DOWN':                    # move cell focus down one row (same column)
                 self._move_focus_row(1)
             case 'KEY_UP':                      # move cell focus up one row (same column)
@@ -235,6 +239,18 @@ class table_screen(tui_base.screen):
             return                                             # at the very first/last cell: no move
         self._ensure_visible(row)
         self._focus_cell(row, self.editable_cols[ci])
+
+    def show_help(self):
+        r'''F1 help -- grows as more keys (and mouse) are added (F9/F10/F2/DEL, editing).'''
+        help_lines = [
+            "Arrows ............. move cell selection",
+            "Tab / Shift-Tab .... next / prev editable cell",
+            "PgUp / PgDn ........ scroll a page",
+            "Home / End ......... scroll to top / bottom",
+            "Esc ................ back",
+            "F1 ................. this help",
+        ]
+        self.popup = tui_base.popup_message("Navigation", self, help_lines)
 
     def execute(self, command):
         trace(f"table_screen.execute({command=})")

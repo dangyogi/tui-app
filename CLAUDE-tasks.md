@@ -524,7 +524,12 @@
             Refinement (2026-07-15): direction-aware first keypress when nothing is selected --
             Down -> top visible row, Up -> bottom visible row; Right -> first editable col, Left -> right-most
             editable col.  (bottom = bottom VISIBLE row.)  Full suite 191.  VERIFIED on the Pi.
-          - 4a-4: Esc = Back, F1 help.
+          - 4a-4 DONE (2026-07-15): process_key Esc -> Back (self.execute('Back')); F1 -> show_help(), a
+            popup_message titled "Navigation" listing the implemented keys (arrows, Tab/Shift-Tab, PgUp/PgDn,
+            Home/End, Esc, F1).  (Esc closes an open popup first, via the existing popup.process_key path.)
+            Tests added; full suite 193.
+          BATCH 4a COMPLETE (cell-focus navigation): 4a-1..4a-4 + the 4a-2b field right-align fix.  Mouse events
+          for the help/nav to be added later.
           Then F9 row menu / F10 screen menu / F2 open row / DEL delete; then in-place editing (item 3).
 
 ### dependencies ###

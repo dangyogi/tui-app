@@ -270,6 +270,25 @@ def test_tab_and_shift_tab_alias_right_and_left(columns):
     assert scr.active_field.screen_key == (0, 1)
 
 
+def test_esc_returns_back(columns):
+    back = object()
+    scr = table_screen(FakeTable("Inv", columns, make_rows(3)), back=back)
+    scr.app = Mock(name="app")
+    scr.lines = 24
+    scr.cols = 80
+    scr.init()
+    scr.draw_body()
+    assert scr.process_key('\x1B') is back       # Esc -> Back returns the back screen
+
+
+def test_f1_calls_show_help(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    called = []
+    monkeypatch.setattr(scr, "show_help", lambda: called.append(True))
+    assert scr.process_key('KEY_F(1)') is None
+    assert called == [True]
+
+
 def test_left_right_noop_in_read_only_table():
     cols = [FakeColumn("a", min_width=5), FakeColumn("b", min_width=5)]   # no editable columns
     rows = [FakeRow(a=f"a{i}", b=f"b{i}") for i in range(3)]
