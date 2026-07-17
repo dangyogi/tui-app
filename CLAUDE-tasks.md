@@ -541,6 +541,55 @@
             popup-building out of process_mouse so key + mouse share it).  Then F2 open row / DEL delete, then
             in-place editing (item 3).
 
+### field scroll + field-class refactor (DESIGN IN PROGRESS 2026-07-17) -- resume HERE, before F9/F10 ###
+
+- Started from the paint() "# FIX: Recalculate scroll position": self.scroll is set to 0 and NEVER recalculated,
+  so "scroll long lines to fit" is unimplemented (the wrap/gen_locations/to_index scroll plumbing exists but
+  nothing drives self.scroll).  This grew into a field.py refactor.
+
+- Scroll design (TWO techniques, one per axis -- Bruce's key insight):
+  - SINGLE-LINE = column (char) scroll.  Settled formula:
+      scroll = clamp(position - int(ncols * X_single), 0, upper)
+      upper  = max(0, len(text) - ncols + (1 if position >= len(text) else 0))   # +1 only for append cursor
+    X_single ~= 0.6, a class variable.  Upper clamp gives "don't scroll if it fits" (upper 0) and no right-gap;
+    the +1 keeps the append position visible.
+  - MULTI-LINE = line scroll (NEW second method).  State = a line offset (wrapped lines skipped from top):
+      line_offset = clamp(cursor_line - keep, 0, total_lines - nlines)   # keep ~= 1 -> cursor on 2nd visible line
+    Needs an "all-lines" wrap (enumerate every wrapped line -> total_lines, per-line starts, cursor_line), then
+    render window [line_offset, line_offset+nlines).  This makes the multi-line upper limit trivially correct --
+    NO capacity / "space-on-last-line" math (that whole stuck thread was an artifact of forcing a char offset onto
+    a wrapped field).
+  - Scrolling RETIRES the W1 "+1 reserved column" hack (append is visible via scroll now).
+
+- Field-class refactor (DECIDED): single/multi ambiguities (wrap-or-not, which placeholder, scroll-or-not) = one
+  class doing two layouts.  Split by TWO axes via MIXINS (multiple inheritance):
+      field       (base: shared state + the one __init__, chgat, enclose, name/app props)
+      single_line (LAYOUT: paint, column-scroll, [<>]/horizontal placeholders, index math -- NO wrap)
+      multi_line  (LAYOUT: paint via wrap, line-scroll, index math)
+      read_only   (BEHAVIOR: activate/deactivate = reverse_attr)
+      editable    (BEHAVIOR: activate = select-all; process_key/insert/delete/set_position/set_selection/...)
+    concrete = one layout + one behavior:
+      read_only_single_line(read_only, single_line, field)
+      editable_single_line (editable,  single_line, field)
+      read_only_multi_line (read_only, multi_line,  field)
+      editable_multi_line  (editable,  multi_line,  field)
+  - Editing methods are layout-agnostic (call self.to_index/get_col/paint, resolved by MRO) -> written once.
+  - Discipline: partition methods so the two axes never define the same one (clean MRO); keep construction in the
+    single field.__init__ (mixins add no __init__; editable state via class defaults).
+  - REJECTED composition (a Field holding layout+behavior instances): the axes share mutable state (text/position/
+    selection/scroll/starts/pads) and behavior constantly calls layout primitives, so composition forces
+    back-references + delegation boilerplate for no gain (combos are fixed at construction, never swapped at
+    runtime).  Also rejected plain single inheritance (duplicates the editing code across single/multi).
+  - field_shared: likely becomes geometry-only (begin_x, ncols, nlines, alignment, validate, app); wrap() moves
+    onto the multi_line layout (single_line never wraps).  Confirm when writing it up.
+
+- NEXT: claude writes the FULL mixin design (exact method placement per class, the field_shared decision, how
+  table/row/menu construct the right concrete class, and an incremental migration + test plan) for Bruce's review
+  BEFORE any code.  Then implement single-line column-scroll first, then multi-line line-scroll.  THEN resume the
+  F9/F10 menus.  Blast radius: field.py + field_shared + all consumers (they construct fields by nlines) + the
+  field tests.
+- Also update, when this lands: the paint() FIX comment (this is the fix) and the W1 note (obsoleted by scroll).
+
 ### dependencies ###
 
 - it would nice, though not absolutely necessary, to remove tui-app's dependencies on csv-app.
