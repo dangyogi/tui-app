@@ -686,6 +686,26 @@
   2. Split field internals into the chosen shape (full-mixin vs hybrid) -> the 4 concrete classes.  Pure internal;
      the factory's field_class attrs now point at the new classes.  No consumer change.  wrap() moves to
      multi_line.  Keep behavior identical (single-line still no scroll yet; multi-line still fixed nlines).
+     - STEP 2 DONE (2026-07-18), full-mixin, behavior-neutral, suite 205 on the Pi:
+       - field.py restructured: `field` base (shared per-cell state + single __init__ + layout/index math:
+         paint, chgat, reverse_attr, gen_locations, get_lineno, get_col, to_index); single_line / multi_line
+         LAYOUT mixins (EMPTY for now); read_only / editable BEHAVIOR mixins; 4 concrete cells
+         read_only_single_line / editable_single_line / read_only_multi_line / editable_multi_line
+         (behavior, layout, field).  __init__ unified to take both attr and callback.
+       - Factory family field_class attrs repointed to the concrete cells; menu action_field subclasses
+         read_only_single_line.
+       - DEVIATION from the plan (intentional, lower-risk): wrap() did NOT move to multi_line yet -- it stays
+         on field_shared and both layouts still share the wrap-based paint/index math on `field`.  Moving wrap
+         only matters once single_line gets its own scroll paint (step 3) and multi_line gets grow (step 4);
+         splitting identical code in step 2 just to move it again would be churn.  So single_line/multi_line are
+         still empty; they gain methods when they actually diverge.  (test_field_shared.py still tests
+         field_shared.wrap, unchanged.)
+       - Tests updated: test_field.py (3-line) -> *_multi_line; test_field_interaction.py (1-line) ->
+         *_single_line; test_table_screen.py / test_field_factory.py isinstance checks -> the `editable` /
+         `read_only` behavior mixins.
+       - NOTE: substantial internal change to the live field classes (unified __init__, MRO).  Consider driving
+         csv-inv-order on the Pi to confirm the menu/row/table cells still render + edit (unit tests use Mock
+         apps and can't exercise the curses paths).
   3. Implement SINGLE-LINE horizontal column-scroll (the X_single formula); drives self.scroll in paint().
      Update the paint() "# FIX: Recalculate scroll position" comment (this IS the fix).  Verify on the Pi.
   4. Implement MULTI-LINE grow-via-REFRESH + from_field; drop the *1.2 (row_screen.py:235) and multi placeholders;
