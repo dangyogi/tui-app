@@ -239,9 +239,9 @@ class field:
     def paint(self):
         r'''Completely replaces everything visible on the screen (ie, curses attrs).
 
-        Recalculates self.scroll position.
+        Renders self.text (wrapped, from self.scroll) plus the cursor/selection.  single_line drives
+        self.scroll from the cursor before delegating here; multi_line does not scroll yet (step 4).
         '''
-        # FIX: Recalculate scroll position
        #trace(f"{self.name}.paint({self.text=!r})")
         self.starts = []
         self.pads = []     # per-line left x-offset of the text (0 for left-aligned)
@@ -252,6 +252,13 @@ class field:
             self.starts.append(start)
             self.pads.append(pad)
             stdscr.addstr(y, self.begin_x, line, attr)
+        self.set_attrs()
+
+    def show_cursor(self):
+        r'''Redraw the cursor/selection after self.position changed.  Base (and multi_line): no
+        horizontal scroll, so just set the attrs.  single_line overrides to scroll the cursor into
+        view (repainting only when that shifts the scroll window).
+        '''
         self.set_attrs()
 
     def chgat(self, start, length, attr):
@@ -382,11 +389,38 @@ class field:
 
 
 class single_line:
-    r'''LAYOUT mixin: single-line cell.
+    r'''LAYOUT mixin: single-line cell with horizontal (character) scroll.
 
-    Currently empty -- inherits the shared layout on `field`.  Step 3 gives it its own horizontal
-    column-scroll paint / index math (no wrap; [<]/[>] placeholders).
+    self.scroll is a character offset into the text.  paint() recomputes it from the cursor
+    (self.position) so the cursor stays visible; the [<]/[>] placeholders (from field_shared) mark
+    scrolled-off text.  Read-only single-line cells have no cursor, so they never scroll (scroll 0).
+
+    NOTE: this still reuses field.paint / gen_locations / to_index (which already understand a scroll
+    offset + placeholders); only the driving of self.scroll is added here.  A full no-wrap rewrite of
+    the single-line layout can follow if needed, but the shared machinery renders one line correctly.
     '''
+    X_single = 0.6   # keep the cursor ~60% of the way across the field when it scrolls
+
+    def _compute_scroll(self):
+        r'''The character offset that keeps self.position visible: 0 when the text fits or there is
+        no cursor (read-only).
+        '''
+        position = getattr(self, 'position', None)
+        if position is None:
+            return 0
+        # the +1 in `upper` (only at the append position) keeps the cursor-past-last-char visible
+        upper = max(0, len(self.text) - self.ncols + (1 if position >= len(self.text) else 0))
+        return min(max(position - int(self.ncols * self.X_single), 0), upper)
+
+    def paint(self):
+        self.scroll = self._compute_scroll()
+        super().paint()
+
+    def show_cursor(self):
+        if self._compute_scroll() != self.scroll:
+            self.paint()          # scroll window shifted -> re-render text (also redraws the cursor)
+        else:
+            self.set_attrs()      # cursor moved within the window -> just move the highlight
 
 
 class multi_line:
@@ -461,7 +495,7 @@ class editable:
         self.set_attrs(reset=True)
         self.position = index
         self.selection_len = 0
-        self.set_attrs()
+        self.show_cursor()
         self.app.screen.activate_field(self)
 
     def set_selection(self, start, end):
@@ -481,7 +515,7 @@ class editable:
             self.set_attrs(reset=True)
             self.position = start
             self.selection_len = length
-            self.set_attrs()
+            self.show_cursor()
             self.app.screen.activate_field(self)
 
     def process_mouse(self, mouse_event):
