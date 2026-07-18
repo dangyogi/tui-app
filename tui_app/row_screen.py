@@ -4,7 +4,7 @@ import math
 
 from csv_app.trace import trace
 from . import tui_base
-from .field import field_shared, read_only_field, editable_field
+from .field import multi_line_shared
 
 
 class row_screen(tui_base.screen):
@@ -235,13 +235,9 @@ class row_screen(tui_base.screen):
             nlines = max(1, math.ceil(value_len * 1.2 / self.width))
             lineno_by_col.append(lineno)
             trace(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}")
-            shared = field_shared(column.name, nlines, self.begin_x, self.width, self.app, column.validate)
-            if self.table is not None and not column.calculated or column.can_edit:
-                f_type = editable_field
-            else:
-                f_type = read_only_field
-            self.fields.append(f_type(len(self.fields), value, shared, lineno,
-                                      attr_pair=column.column_attr_pair(self.row)))
+            shared = multi_line_shared(column, self.begin_x, self.width, self.app,
+                                       nlines=nlines, creating=self.table is not None)
+            self.fields.append(shared.field_for(self.row, begin_y=lineno, screen_key=len(self.fields)))
             lineno += nlines
         self.active_field = None
 
