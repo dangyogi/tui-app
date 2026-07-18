@@ -13,8 +13,14 @@ from .tui_base import curses, bstate_str, trace
 class field_shared:
     max_waste = 10
 
+    # Concrete field class this shared builds.  None on the base; set by the thin subclasses at the
+    # bottom of this file (read_only_single_shared, editable_multi_shared, ...).  The screens never
+    # name a field class -- they configure a field_shared (usually via the pickers below) and ask it
+    # for fields with field_for()/edit_text()/from_field().
+    field_class = None
+
     def __init__(self, name, nlines, begin_x, ncols, app=None, validate_fn=None, alignment="left",
-                 left_placeholder='[...] ', right_placeholder=' [...]'):
+                 left_placeholder='[...] ', right_placeholder=' [...]', column=None):
         self.name = name
         self.nlines = nlines
         self.begin_x = begin_x
@@ -24,6 +30,29 @@ class field_shared:
         self.alignment = alignment
         self.left_placeholder = left_placeholder
         self.right_placeholder = right_placeholder
+        self.column = column   # the consuming-app column; used by field_for() to pull row values
+
+    def field_for(self, row, begin_y, screen_key):
+        r'''Build a field whose text is row's value for this column (self.column).'''
+        text = row.get(self.column.name)
+        attr_pair = self.column.column_attr_pair(row)
+        return self.field_class(screen_key, text, self, begin_y, attr_pair=attr_pair)
+
+    def edit_text(self, text, begin_y, screen_key, callback=None):
+        r'''Build an editable field seeded with an exact string (no backing row).'''
+        return self.field_class(screen_key, text, self, begin_y, callback=callback)
+
+    def from_field(self, old, begin_y, screen_key):
+        r'''Rebuild a field at new geometry (grown nlines / shifted begin_y), preserving the
+        in-progress edit state so it is not lost across a REFRESH (and still submits: `changed`
+        must ride along, else the column drops out of the screen's attrs_changed set).
+        '''
+        f = self.field_class(screen_key, old.text, self, begin_y, paint=False)
+        f.changed = old.changed
+        f.position = getattr(old, 'position', None)
+        f.selection_len = getattr(old, 'selection_len', 0)
+        f.paint()
+        return f
 
     def wrap(self, text, scroll=0):
         r'''Generates (index, pad, line) triples: index is the text offset of the line's first char
@@ -544,4 +573,47 @@ class editable_field(read_only_field):
 
     def deactivate(self):
         self.set_attrs(reset=True)
+
+
+# --- field_shared factory family -------------------------------------------------------------------
+#
+# Thin subclasses that parallel the field classes: each just names the concrete field_class it builds.
+# The base field_shared holds all the factory machinery.  Adding a field kind is adding a subclass --
+# no central switch to edit -- and apps can define their own (e.g. menu_screen's action_shared).
+#
+# STEP-1 NOTE (migration): single_* and multi_* both point at the CURRENT read_only_field /
+# editable_field for now.  The single-vs-multi split into distinct field classes happens in step 2;
+# until then these subclasses differ only in the conventions their pickers apply (nlines, placeholders,
+# alignment).  This is deliberately behavior-neutral.
+
+class read_only_single_shared(field_shared):
+    field_class = read_only_field
+
+class editable_single_shared(field_shared):
+    field_class = editable_field
+
+class read_only_multi_shared(field_shared):
+    field_class = read_only_field
+
+class editable_multi_shared(field_shared):
+    field_class = editable_field
+
+
+def single_line_shared(column, name, begin_x, ncols, app):
+    r'''Column-backed single-line field_shared (table_screen convention: 1 line, "<"/">" markers,
+    the column's alignment).  Picks editable vs read-only from column.can_edit.
+    '''
+    cls = editable_single_shared if column.can_edit else read_only_single_shared
+    return cls(name, 1, begin_x, ncols, app, column.validate, column.alignment,
+               left_placeholder="<", right_placeholder=">", column=column)
+
+
+def multi_line_shared(column, begin_x, ncols, app, *, nlines, creating):
+    r'''Column-backed multi-line field_shared (row_screen convention: default "[...]" markers,
+    left-aligned).  Editable when creating unless calculated-and-not-editable; when updating only if
+    column.can_edit.  (Matches the predicate at row_screen.py:239.)
+    '''
+    editable = ((not column.calculated) or column.can_edit) if creating else column.can_edit
+    cls = editable_multi_shared if editable else read_only_multi_shared
+    return cls(column.name, nlines, begin_x, ncols, app, column.validate, column=column)
 
