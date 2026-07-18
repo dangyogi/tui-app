@@ -541,54 +541,156 @@
             popup-building out of process_mouse so key + mouse share it).  Then F2 open row / DEL delete, then
             in-place editing (item 3).
 
-### field scroll + field-class refactor (DESIGN IN PROGRESS 2026-07-17) -- resume HERE, before F9/F10 ###
+### field_shared-factory + field-class refactor (DESIGN AGREED 2026-07-18) -- resume HERE, before F9/F10 ###
 
-- Started from the paint() "# FIX: Recalculate scroll position": self.scroll is set to 0 and NEVER recalculated,
-  so "scroll long lines to fit" is unimplemented (the wrap/gen_locations/to_index scroll plumbing exists but
-  nothing drives self.scroll).  This grew into a field.py refactor.
+- Origin: the paint() "# FIX: Recalculate scroll position" (self.scroll is set to 0 and NEVER recalculated, so
+  "scroll long lines to fit" is unimplemented -- the wrap/gen_locations/to_index plumbing exists but nothing
+  drives self.scroll).  Fixing it grew into a field.py refactor, which grew (2026-07-18) into a redesign of the
+  field_shared vs field split.  claude: this section supersedes the old "field scroll + field-class refactor
+  (DESIGN IN PROGRESS 2026-07-17)" section.
 
-- Scroll design (TWO techniques, one per axis -- Bruce's key insight):
-  - SINGLE-LINE = column (char) scroll.  Settled formula:
+- OVERARCHING DECISION (2026-07-18): field_shared becomes a FAMILY of small FACTORY classes.  It, not the screen,
+  owns the decision of which concrete field class to build.  A screen configures one field_shared per column and
+  then just asks it for fields; it never names a field class.  This is the frame into which the MI/method-placement
+  question plugs (see "field-class internals" below) -- and that internals question is now DEFERRED because it is
+  fully hidden behind the factory.
+
+  - Why a FAMILY (not one field_shared with a `_make` switch on flags): Bruce's call.  A family of thin subclasses
+    that parallel the field classes is closed-to-modification / open-to-extension -- adding a field kind = adding a
+    subclass, no central switch to edit.  It also lets apps define their OWN weird field kinds (menu_screen's
+    action field) as first-class members instead of core hacks.  The `layout=` and `editable=` flags dissolve into
+    the class choice.
+
+  - The family:
+      field_shared                 # base: geometry (begin_x, ncols, nlines, alignment), app, trace_name,
+                                   #   validate_fn, AND the factory methods.  field_class = None.
+      read_only_single_shared      # field_class = read_only_single_line
+      editable_single_shared       # field_class = editable_single_line
+      read_only_multi_shared       # field_class = read_only_multi_line
+      editable_multi_shared        # field_class = editable_multi_line
+    Each subclass is ~one line (just sets field_class); the base news up self.field_class(...).  App-defined kinds
+    (menu action) subclass field_shared in the APP module (see below), so core never learns about them.
+
+  - Three ways a field_shared makes a field (all new up self.field_class):
+      field_for(row, begin_y, screen_key)          -> text = row.get(column.name); attr_pair from
+                                                       column.column_attr_pair(row).  Column-backed (table, row).
+      edit_text(text, begin_y, screen_key, cb=None)-> seed from an exact string; isolated (menu ask_question).
+                                                       validate comes from field_shared.validate_fn (no column).
+      from_field(old, begin_y, screen_key)         -> rebuild at new geometry PRESERVING the in-progress edit
+                                                       (see REFRESH below).  Distinct intent from edit_text.
+
+  - Caller's choice lives in TWO convenience pickers (written ONCE, not duplicated per screen); weird kinds skip
+    them and instantiate their subclass directly:
+      single_line_shared(column, begin_x, ncols, app):
+          editable_single_shared if column.can_edit else read_only_single_shared
+      multi_line_shared(column, begin_x, ncols, app, *, creating):
+          editable = (not column.calculated) if creating else column.can_edit   # == today's row_screen.py:239
+          editable_multi_shared if editable else read_only_multi_shared
+    The per-column editable branch thus runs ONCE PER COLUMN at draw_body time (was per-cell in draw_rows).
+
+  - Per-screen usage after:
+      table_screen: single_line_shared(column, ...) per column in draw_body; draw_rows just does
+                    shared.field_for(row, begin_y=lineno, screen_key=(row_index, col)) -- the can_edit branch is
+                    GONE from draw_rows.
+      row_screen:   multi_line_shared(column, ..., creating=self.table is not None) per column;
+                    shared.field_for(self.row, ...).  (self.table is not None IS the create-vs-update flag:
+                    init_table sets it, init_row does not.)
+      menu_screen:  defines its OWN action_shared(field_shared) in menu_screen.py with field_class = action_field
+                    and an overridden field_for(action, ...) (action-backed, not row-backed).  action_field stops
+                    being an odd-one-out; it is an app-defined family member.
+      ask_question: an editable_single_shared with column=None and an explicit validate_fn + trace_name="answer";
+                    self.answer = shared.edit_text(default, ..., cb=self.run_callback).
+
+  - display_name is NOT needed on the field: field.name is used ONLY for trace strings; the screen draws the
+    column header row itself (table_screen.py:300-308).  So field.name derives from a trace_name (= column.name,
+    or "answer" for the isolated case).  No display_name plumbing.
+
+- SCROLL / MULTI-LINE-GROWTH design (2026-07-18, replaces the old "two scroll techniques" plan):
+  - SINGLE-LINE (table_screen) KEEPS horizontal column (char) scroll.  Settled formula:
       scroll = clamp(position - int(ncols * X_single), 0, upper)
       upper  = max(0, len(text) - ncols + (1 if position >= len(text) else 0))   # +1 only for append cursor
     X_single ~= 0.6, a class variable.  Upper clamp gives "don't scroll if it fits" (upper 0) and no right-gap;
-    the +1 keeps the append position visible.
-  - MULTI-LINE = line scroll (NEW second method).  State = a line offset (wrapped lines skipped from top):
-      line_offset = clamp(cursor_line - keep, 0, total_lines - nlines)   # keep ~= 1 -> cursor on 2nd visible line
-    Needs an "all-lines" wrap (enumerate every wrapped line -> total_lines, per-line starts, cursor_line), then
-    render window [line_offset, line_offset+nlines).  This makes the multi-line upper limit trivially correct --
-    NO capacity / "space-on-last-line" math (that whole stuck thread was an artifact of forcing a char offset onto
-    a wrapped field).
-  - Scrolling RETIRES the W1 "+1 reserved column" hack (append is visible via scroll now).
+    the +1 keeps the append position visible.  [<]/[>] horizontal placeholders stay for single-line only.
+  - MULTI-LINE (row_screen) DOES NOT SCROLL.  Instead it GROWS line count: when a keystroke needs more than
+    nlines wrapped lines, the field bumps its field_shared.nlines += 1 and returns 'REFRESH'; draw() re-lays-out
+    the column stack (grown field pushes fields/buttons below it down) and repaints.  Consequences:
+      - drops the `* 1.2` over-allocation (row_screen.py:235) and the multi-line placeholder question (none).
+      - RETIRES the old MULTI-LINE line-scroll plan AND the W1 "+1 reserved column" hack.
+      - nlines is LEFT TALL until you leave the field (no shrink-REFRESH; fewer redraws / no flicker).
+    (Single-line scroll still RETIRES W1 for table via horizontal scroll.)
+  - REFRESH text-source problem + fix (the crux):
+      In row_screen, in-progress edits live ONLY in the field (field.text / field.changed); they reach self.row
+      only via update() (row_screen.py:195-202) at validate/submit, and update() CLEARS field.changed (which
+      validate() relies on to build attrs_changed).  So we canNOT call update() before REFRESH, and a naive
+      field_for(self.row) on REFRESH would pull the STALE row value and lose the edit.
+      FIX = from_field(old, begin_y, screen_key): rebuild the edited field carrying over text, changed (CRUCIAL --
+      else the column drops out of the submit set), position, selection_len; paint() with the grown nlines.
+      draw_body on REFRESH: for each column, if a prior field exists AND is .changed -> shared.from_field(prior,...)
+      else shared.field_for(self.row, ...); then re-activate the field whose screen_key matches the old active
+      field.  Because changed+text+name are preserved, the EXISTING validate()/update() submit path is unchanged
+      (it never learns a REFRESH happened).  This preserves EVERY in-progress edit, not just the active one.
+      Alternative held in reserve (Bruce agnostic): RETAIN the field objects and shift begin_y (the
+      _reindex_row_fields trick), repainting from the grown field down -- fewer redraws, no state copy, but a more
+      surgical draw_body.  Growth is rare, so start with from_field (keeps draw_body's simple rebuild).
 
-- Field-class refactor (DECIDED): single/multi ambiguities (wrap-or-not, which placeholder, scroll-or-not) = one
-  class doing two layouts.  Split by TWO axes via MIXINS (multiple inheritance):
-      field       (base: shared state + the one __init__, chgat, enclose, name/app props)
-      single_line (LAYOUT: paint, column-scroll, [<>]/horizontal placeholders, index math -- NO wrap)
-      multi_line  (LAYOUT: paint via wrap, line-scroll, index math)
-      read_only   (BEHAVIOR: activate/deactivate = reverse_attr)
-      editable    (BEHAVIOR: activate = select-all; process_key/insert/delete/set_position/set_selection/...)
-    concrete = one layout + one behavior:
-      read_only_single_line(read_only, single_line, field)
-      editable_single_line (editable,  single_line, field)
-      read_only_multi_line (read_only, multi_line,  field)
-      editable_multi_line  (editable,  multi_line,  field)
-  - Editing methods are layout-agnostic (call self.to_index/get_col/paint, resolved by MRO) -> written once.
-  - Discipline: partition methods so the two axes never define the same one (clean MRO); keep construction in the
-    single field.__init__ (mixins add no __init__; editable state via class defaults).
-  - REJECTED composition (a Field holding layout+behavior instances): the axes share mutable state (text/position/
-    selection/scroll/starts/pads) and behavior constantly calls layout primitives, so composition forces
-    back-references + delegation boilerplate for no gain (combos are fixed at construction, never swapped at
-    runtime).  Also rejected plain single inheritance (duplicates the editing code across single/multi).
-  - field_shared: likely becomes geometry-only (begin_x, ncols, nlines, alignment, validate, app); wrap() moves
-    onto the multi_line layout (single_line never wraps).  Confirm when writing it up.
+- FIELD-CLASS INTERNALS (how field_class is implemented) -- DECISION DEFERRED, now hidden behind the factory:
+  - Composition (a field holding separate layout+behavior instances) was considered and REJECTED for the per-cell
+    field: the axes share one blob of per-cell MUTABLE state (text/position/selection_len/in_select/scroll/starts/
+    pads/begin_y) and call each other BOTH ways (editing mutates text then calls layout to_index/get_col/paint;
+    paint() calls behavior set_attrs).  Composition would force back-refs + ~15-20 forwarding stubs + 3x per-cell
+    object churn (fields are created/destroyed on every table scroll and on every row_screen REFRESH) to buy a
+    runtime-swap capability that never happens (a cell's layout+behavior is fixed at construction).  The churn
+    argument specifically KILLS 3-object composition; it does NOT distinguish the two survivors below (both make
+    exactly ONE field object per cell and keep field_shared as the shared per-column object).
+  - DECIDED (2026-07-18): FULL-MIXIN (not hybrid).  Rationale below.
+      full-mixin: field base + single_line/multi_line LAYOUT mixins + read_only/editable BEHAVIOR mixins ->
+                  4 concrete classes (read_only_single_line, editable_single_line, read_only_multi_line,
+                  editable_multi_line).  read_only & editable are SIBLING mixins on field, NOT editable(read_only).
+      hybrid:     keep editable(read_only) single inheritance (as today) + only single/multi as a layout mixin.
+    rationale for full-mixin: once LAYOUT (paint/gen_locations/get_col/get_lineno/to_index) is extracted into a
+    mixin, the editable(read_only) link carries almost nothing (editable already overrides set_attrs/activate/
+    deactivate/enclose), so making them siblings is marginally CLEANER, not more complex.  Both survivors still use
+    MI to bring in the layout mixin, so hybrid does not buy "no MRO".  NOTE: this MI decision is for the FIELD
+    family ONLY; the field_shared FACTORY family stays plain thin subclasses (no MI) -- see the two-hierarchies
+    note at the end of this section.  Method partition (rough):
+      field base : __init__, chgat, name/nlines/begin_x/ncols/app props, validate, reverse_attr (shared utils).
+      LAYOUT     : paint, gen_locations, get_lineno, get_col, to_index; single_line adds column-scroll + [<>]
+                   placeholders (NO wrap); multi_line adds wrap + line-grow (NO scroll, NO placeholders).
+      BEHAVIOR   : read_only -> set_attrs(pass), activate/deactivate(reverse_attr), enclose(False);
+                   editable  -> set_attrs(cursor/selection), activate(select-all), deactivate, enclose(compute),
+                                get_text, process_mouse, process_key, insert, delete, delete_selection,
+                                extend_selection, set_position, set_selection.  (Editing methods are
+                                layout-agnostic -- KEY_UP/DOWN already no-op on single-line via the get_lineno
+                                guards -- so written once.)
+    field_shared (base) becomes geometry-only per the family design above; wrap() moves onto the multi_line layout
+    (single_line never wraps).
 
-- NEXT: claude writes the FULL mixin design (exact method placement per class, the field_shared decision, how
-  table/row/menu construct the right concrete class, and an incremental migration + test plan) for Bruce's review
-  BEFORE any code.  Then implement single-line column-scroll first, then multi-line line-scroll.  THEN resume the
-  F9/F10 menus.  Blast radius: field.py + field_shared + all consumers (they construct fields by nlines) + the
-  field tests.
-- Also update, when this lands: the paint() FIX comment (this is the fix) and the W1 note (obsoleted by scroll).
+- MIGRATION / TEST PLAN (write tests folded into each step; run on the Pi:
+  ssh rpi-zero-2-w 'source ~/csv-venv/bin/activate && cd ~/tui-app && pytest -q'):
+  1. Introduce the field_shared FAMILY behind the CURRENT field classes (field_class = read_only_field /
+     editable_field for now).  Add field_for/edit_text/from_field + the two pickers.  Port table_screen,
+     row_screen, menu_screen, ask_question to construct via the family.  BEHAVIOR-NEUTRAL (no scroll/grow yet).
+     This lands the biggest consumer change first, cheaply, with today's field internals.
+  2. Split field internals into the chosen shape (full-mixin vs hybrid) -> the 4 concrete classes.  Pure internal;
+     the factory's field_class attrs now point at the new classes.  No consumer change.  wrap() moves to
+     multi_line.  Keep behavior identical (single-line still no scroll yet; multi-line still fixed nlines).
+  3. Implement SINGLE-LINE horizontal column-scroll (the X_single formula); drives self.scroll in paint().
+     Update the paint() "# FIX: Recalculate scroll position" comment (this IS the fix).  Verify on the Pi.
+  4. Implement MULTI-LINE grow-via-REFRESH + from_field; drop the *1.2 (row_screen.py:235) and multi placeholders;
+     wire row_screen draw_body's REFRESH rebuild (from_field for changed fields).  Verify edits survive REFRESH
+     and still submit correctly.  Update/retire the W1 note (obsoleted).
+  5. THEN resume the F9/F10 menus (next feature after this refactor).
+  - Blast radius: field.py + field_shared + all three screens (they construct fields) + the field tests +
+    row/menu screen tests.  row_screen & menu_screen still have thin tests -- ALSO drive csv-inv-order on the Pi
+    after steps 1 and 4.
+
+- TWO SEPARATE HIERARCHIES, DIFFERENT ANSWERS (both DECIDED 2026-07-18) -- do not conflate:
+  - FIELD family (the concrete cells, step 2 internals) = FULL-MIXIN (MI): field base + single_line/multi_line
+    LAYOUT mixins + read_only/editable BEHAVIOR mixins -> 4 concrete classes.  (This is what "full-mixin over
+    hybrid" decided.  See "FIELD-CLASS INTERNALS" above.)
+  - field_shared family (the factories) = PLAIN THIN SUBCLASSES, NO MI: each just sets field_class (one line);
+    the base holds all the factory machinery.  The two hierarchies are NOT coupled.
+- No open items remain blocking; step 1 of the migration plan can start.
 
 ### dependencies ###
 
