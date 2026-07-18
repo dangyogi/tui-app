@@ -186,6 +186,31 @@ class field_shared:
         for _ in range(nlines):
             yield None, 0, ' ' * self.ncols
 
+    def line_count(self, text):
+        r'''How many wrapped lines `text` needs at ncols, with NO line limit and no placeholders.
+
+        Mirrors wrap()'s word-breaking (space breaks; mid-word break with max_waste lookback), so
+        multi_line can tell when an edited field must grow.  Empty text needs 1 line.
+        '''
+        text = text.rstrip()
+        if not text:
+            return 1
+        offset = 0
+        lines = 0
+        while offset < len(text):
+            lines += 1
+            next = offset + self.ncols
+            if next >= len(text):
+                break
+            if text[next] == ' ':
+                offset = self.first_non_blank(text, next + 1)
+            else:
+                i = text.rfind(' ', next - self.max_waste, next)
+                if i != -1:
+                    next = i + 1
+                offset = next
+        return lines
+
 
 class field:
     r'''Base for all on-screen field cells: shared per-cell state, the single __init__, and (for now)
@@ -260,6 +285,13 @@ class field:
         view (repainting only when that shifts the scroll window).
         '''
         self.set_attrs()
+
+    def grow_if_needed(self):
+        r'''Does the current text overflow nlines?  Base (and single_line, which scrolls instead):
+        never.  multi_line overrides to return True when the text needs more wrapped lines, so the
+        editing code can trigger a REFRESH that re-lays-out the (taller) field.
+        '''
+        return False
 
     def chgat(self, start, length, attr):
         r'''This takes indexes into self.text.
@@ -424,11 +456,16 @@ class single_line:
 
 
 class multi_line:
-    r'''LAYOUT mixin: multi-line cell.
+    r'''LAYOUT mixin: multi-line cell that grows (never scrolls).
 
-    Currently empty -- inherits the shared wrap-based layout on `field` (wrap() lives on field_shared).
-    Step 4 gives it line-grow-via-REFRESH, at which point wrap() moves onto this mixin.
+    Reuses the shared wrap-based layout on `field` (wrap() still lives on field_shared).  When an edit
+    makes the text need more than nlines wrapped lines, grow_if_needed() reports it; the editing code
+    returns 'REFRESH' and the screen re-lays-out the field one (or more) lines taller.  No horizontal
+    scroll and no [<]/[>] placeholders (multi_line_shared uses empty markers).
     '''
+
+    def grow_if_needed(self):
+        return self.field_shared.line_count(self.text) > self.nlines
 
 
 class read_only:
@@ -609,6 +646,10 @@ class editable:
                 case _:
                     trace(f"{self.name}.process_key({key=}): unknown key")
                     return key
+        if self.grow_if_needed():
+            # the edit needs another line -> let the screen re-lay-out this (taller) field
+            trace(f"{self.name}.process_key({key=}): grow -> REFRESH")
+            return 'REFRESH'
         return None
 
     def insert(self, text, offset=0):
@@ -655,7 +696,13 @@ class editable:
         self.set_attrs()
 
     def deactivate(self):
+        r'''Clear the highlight AND the cursor state: a deactivated field has no cursor, so when it
+        is later repainted (e.g. from_field on a grow-REFRESH) it shows no stray cursor.  Re-entering
+        the field select-alls anyway (activate), so nothing depends on the old position.
+        '''
         self.set_attrs(reset=True)
+        self.position = None
+        self.selection_len = 0
 
 
 # --- concrete field cells (one BEHAVIOR + one LAYOUT + the base) -----------------------------------
@@ -702,10 +749,11 @@ def single_line_shared(column, name, begin_x, ncols, app):
 
 
 def multi_line_shared(column, begin_x, ncols, app, *, nlines, creating):
-    r'''Column-backed multi-line field_shared (row_screen convention: default "[...]" markers,
-    left-aligned).  Editable when creating unless calculated-and-not-editable; when updating only if
-    column.can_edit.  (Matches the predicate at row_screen.py:239.)
+    r'''Column-backed multi-line field_shared (row_screen convention: left-aligned, no placeholders --
+    multi_line grows instead of truncating).  Editable when creating unless calculated-and-not-editable;
+    when updating only if column.can_edit.  (Matches the predicate at row_screen.py:239.)
     '''
     editable = ((not column.calculated) or column.can_edit) if creating else column.can_edit
     cls = editable_multi_shared if editable else read_only_multi_shared
-    return cls(column.name, nlines, begin_x, ncols, app, column.validate, column=column)
+    return cls(column.name, nlines, begin_x, ncols, app, column.validate,
+               left_placeholder="", right_placeholder="", column=column)

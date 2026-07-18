@@ -101,7 +101,8 @@ def test_multi_line_shared_editable_predicate(app, can_edit, calculated, creatin
     assert shared.nlines == 3
     assert shared.name == "c"                 # multi uses the column name
     assert shared.alignment == "left"         # row_screen default
-    assert shared.left_placeholder == "[...] "   # default markers, not the table "<"
+    assert shared.left_placeholder == ""      # multi_line grows -> no placeholders
+    assert shared.right_placeholder == ""
     assert shared.column is col
 
 

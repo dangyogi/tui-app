@@ -8,7 +8,15 @@ becomes active and that activate/deactivate fire, without a real terminal.
 
 from unittest.mock import Mock
 
+import pytest
+
+from tui_app import tui_base
 from tui_app.row_screen import row_screen
+
+
+@pytest.fixture(autouse=True)
+def patch_curses(monkeypatch):
+    monkeypatch.setattr(tui_base.curses, "color_pair", lambda n: n)
 
 
 def fake_field(screen_key, can_edit, handled=False):
@@ -58,3 +66,89 @@ def test_key_routed_to_active_field():
     s.active_field = f
     assert s.process_key('x') is None        # active field handled it
     f.process_key.assert_called_once_with('x')
+
+
+def test_grow_refresh_records_refocus():
+    f = fake_field(0, True)
+    f.process_key.side_effect = lambda key: 'REFRESH'   # the field grew
+    s = make_screen([f])
+    s.active_field = f
+    assert s.process_key('x') == 'REFRESH'
+    assert s._refocus == 0                    # remembered which field to re-focus after the redraw
+
+
+# --- draw_body: multi-line grow rebuild (real fields) ---------------------------------------------
+
+class FakeColumn:
+    def __init__(self, name, can_edit=False, calculated=False, edit_width=None, alignment="left"):
+        self.name = name
+        self.can_edit = can_edit
+        self.calculated = calculated
+        self.edit_width = edit_width
+        self.alignment = alignment
+
+    def validate(self, s):
+        pass
+
+    def column_attr_pair(self, row):
+        return 0x70
+
+
+class FakeRow:
+    row_screen_commands = ()
+    table_name = "T"
+
+    def __init__(self, columns, values):
+        self.columns = columns
+        self._values = dict(values)
+
+    def copy(self):
+        return FakeRow(self.columns, self._values)
+
+    def get(self, name):
+        return str(self._values.get(name, ""))
+
+    def set(self, name, val):
+        self._values[name] = val
+
+    def human_key(self):
+        return "k"
+
+
+def make_row_screen(columns, values, cols=25, lines=40):
+    s = row_screen.for_update(FakeRow(columns, values))
+    s.app = Mock(name="app")
+    s.cols = cols
+    s.lines = lines
+    s.init()
+    return s
+
+
+def test_draw_body_sizes_by_line_count():
+    cols = [FakeColumn("a"), FakeColumn("b", can_edit=True)]
+    s = make_row_screen(cols, {"a": "short", "b": "x"})
+    s.draw_body()
+    assert len(s.fields) == 2
+    assert s.fields[0].nlines == 1           # short values fit one line (no *1.2 slack)
+    assert s.fields[1].nlines == 1
+
+
+def test_draw_body_grow_refresh_preserves_edit_and_refocuses():
+    cols = [FakeColumn("a", can_edit=True)]
+    s = make_row_screen(cols, {"a": "x"})
+    s.draw_body()
+    f = s.fields[0]
+    # simulate typing a long value into the field: the edit lives in the field, not self.row
+    f.text = "a much longer edited value that wraps"
+    f.changed = True
+    f.position = len(f.text)
+    s.active_field = f
+    s._refocus = 0                           # as process_key would set on a grow
+    s.draw_body()
+    new = s.fields[0]
+    assert new is not f                       # rebuilt
+    assert new.text == "a much longer edited value that wraps"   # from_field, not the stale row "x"
+    assert new.changed                        # preserved -> still submits
+    assert new.nlines >= 2                    # grew to fit
+    assert s.active_field is new              # re-focused
+    assert s.row.get("a") == "x"             # row NOT updated until submit

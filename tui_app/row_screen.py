@@ -9,6 +9,7 @@ from .field import multi_line_shared
 
 class row_screen(tui_base.screen):
     active_field = None
+    _refocus = None        # screen_key to re-focus after a grow-REFRESH (None -> drop focus)
     msg_len = 0
     default_attr = 0x00
     error_attr = 0x10
@@ -100,6 +101,10 @@ class row_screen(tui_base.screen):
         self.clear_message()
         if self.active_field is not None:
             key = self.active_field.process_key(key)
+            if key == 'REFRESH':
+                # the active (multi-line) field grew -> re-focus it after the redraw so the cursor
+                # (which from_field restores) keeps typing where it left off
+                self._refocus = self.active_field.screen_key
             if tui_base.event_handled(key):
                 return key
         if key == '\t':
@@ -223,23 +228,38 @@ class row_screen(tui_base.screen):
         trace(f"draw_body(): {len(self.columns)=}")
         self.begin_x = self.max_col_name_len + 2
         self.width = self.cols - self.begin_x
+        prior = {f.screen_key: f for f in self.fields}    # by screen_key (== column index)
+        refocus = self._refocus
+        self._refocus = None
+        if refocus is None and self.active_field is not None:
+            # not preserving focus (resize / validate): drop the old cursor so from_field, if it
+            # rebuilds that field's in-progress edit, doesn't repaint a stray cursor
+            self.active_field.position = None
         self.fields = []
         lineno = 2
-        lineno_by_col = []
-        for column in self.columns:
+        for i, column in enumerate(self.columns):
             self.app.stdscr.addstr(lineno, 0, f"{column.name}:")
-            value = self.row.get(column.name)
-            value_len = len(value)
-            if column.edit_width is not None and column.edit_width > value_len:
-                value_len = column.edit_width
-            nlines = max(1, math.ceil(value_len * 1.2 / self.width))
-            lineno_by_col.append(lineno)
-            trace(f"{column.name=}, {value_len=}, {nlines=} at {lineno=}, {self.begin_x=}")
+            old = prior.get(i)
+            preserve = old is not None and old.changed   # in-progress edit lives only in the field
+            text = old.text if preserve else self.row.get(column.name)
             shared = multi_line_shared(column, self.begin_x, self.width, self.app,
-                                       nlines=nlines, creating=self.table is not None)
-            self.fields.append(shared.field_for(self.row, begin_y=lineno, screen_key=len(self.fields)))
+                                       nlines=1, creating=self.table is not None)
+            # size to fit the text (grow handles typing beyond this); honor edit_width as extra room
+            nlines = max(1, shared.line_count(text))
+            if column.edit_width is not None:
+                nlines = max(nlines, math.ceil(column.edit_width / self.width))
+            shared.nlines = nlines
+            trace(f"{column.name=}, {len(text)=}, {nlines=} at {lineno=}, {self.begin_x=}, {preserve=}")
+            if preserve:
+                field = shared.from_field(old, begin_y=lineno, screen_key=i)
+            else:
+                field = shared.field_for(self.row, begin_y=lineno, screen_key=i)
+            self.fields.append(field)
             lineno += nlines
+        # after a grow-REFRESH, re-focus the field that grew (from_field already restored its cursor)
         self.active_field = None
+        if refocus is not None and refocus < len(self.fields):
+            self.active_field = self.fields[refocus]
 
         # draw command buttons
         self.button_y = lineno + 3
