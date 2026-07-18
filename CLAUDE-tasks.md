@@ -671,6 +671,18 @@
      editable_field for now).  Add field_for/edit_text/from_field + the two pickers.  Port table_screen,
      row_screen, menu_screen, ask_question to construct via the family.  BEHAVIOR-NEUTRAL (no scroll/grow yet).
      This lands the biggest consumer change first, cheaply, with today's field internals.
+     - STEP 1 DONE + VERIFIED (2026-07-18), all sub-batches behavior-neutral, suite 205 on the Pi, and Bruce
+       drove csv-inv-order on the Pi (menu + row form + ask_question) with no visible change:
+       - 1a: field.py -- field_shared gains field_class + field_for/edit_text/from_field + a column= param;
+         4 thin subclasses (read_only/editable x single/multi, all pointing at the current field classes);
+         pickers single_line_shared / multi_line_shared.  New tests/test_field_factory.py (own fakes with
+         `calculated`).  Nothing consumes it yet.
+       - 1b: table_screen -- draw_body uses single_line_shared; draw_rows uses shared.field_for() (dropped the
+         per-cell can_edit branch).
+       - 1c: row_screen -- draw_body uses multi_line_shared(creating=self.table is not None) + field_for();
+         the create-vs-update editable predicate moved into the picker (matches old row_screen.py:239).
+       - 1d: menu_screen -- added action_shared (app-defined family member, action-backed field_for); action
+         fields + ask_question (editable_single_shared.edit_text) build via the family.
   2. Split field internals into the chosen shape (full-mixin vs hybrid) -> the 4 concrete classes.  Pure internal;
      the factory's field_class attrs now point at the new classes.  No consumer change.  wrap() moves to
      multi_line.  Keep behavior identical (single-line still no scroll yet; multi-line still fixed nlines).
