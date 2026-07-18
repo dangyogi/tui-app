@@ -70,8 +70,13 @@ class field_shared:
         r'''Rebuild a field at new geometry (grown nlines / shifted begin_y), preserving the
         in-progress edit state so it is not lost across a REFRESH (and still submits: `changed`
         must ride along, else the column drops out of the screen's attrs_changed set).
+
+        The row is not committed mid-edit, so the old field's attr_pair (the column_attr_pair(row)
+        highlight) is exactly what should carry over -- pass it through rather than falling back to
+        default_attr_pair (which would drop the row's highlight after a grow).
         '''
-        f = self.field_class(screen_key, old.text, self, begin_y, paint=False)
+        f = self.field_class(screen_key, old.text, self, begin_y, paint=False,
+                             attr_pair=old.attr_pair, attr=old.attr)
         f.changed = old.changed
         f.position = getattr(old, 'position', None)
         f.selection_len = getattr(old, 'selection_len', 0)
@@ -338,6 +343,9 @@ class field:
                     skip = 0 if lineno or not self.scroll else len(self.field_shared.left_placeholder)
                     start_x = max(skip, start - this_start)
                     end_x = min(end, next_start) - this_start
+                    # never run past the field's own width: the append cursor (next_start = len+1) on
+                    # an exactly-full line would otherwise land one column past ncols (curses ERR).
+                    end_x = min(end_x, self.ncols - self.pads[lineno])
                    #trace(f"{self.name}.gen_locations.gen_line: {skip=}, {start_x=}, {end_x=}")
                     if end_x > skip and end_x > start_x:
                         yield self.begin_y + lineno, self.begin_x + self.pads[lineno] + start_x, \

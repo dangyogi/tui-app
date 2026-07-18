@@ -144,6 +144,7 @@ def test_from_field_preserves_edit_state(app):
     old.changed = True
     old.position = 3
     old.selection_len = 2
+    old.attr_pair = 0x06                 # a column_attr_pair(row) highlight
     new = shared.from_field(old, begin_y=9, screen_key=1)
     assert isinstance(new, editable)
     assert new.text == "hello world"
@@ -151,3 +152,4 @@ def test_from_field_preserves_edit_state(app):
     assert new.position == 3
     assert new.selection_len == 2
     assert new.begin_y == 9
+    assert new.attr_pair == 0x06         # highlight preserved, not reset to default
