@@ -5,7 +5,7 @@ import math
 from csv_app import action
 from csv_app.trace import trace
 from . import tui_base
-from .field import field_shared, read_only_field, editable_field
+from .field import field_shared, read_only_field, editable_single_shared
 
 
 class action_field(read_only_field):
@@ -15,6 +15,16 @@ class action_field(read_only_field):
 
     def enclose(self, y, x):
         return y == self.begin_y and self.begin_x <= x < self.begin_x + len(self.text)
+
+
+class action_shared(field_shared):
+    r'''An app-defined member of the field_shared family: builds action_fields (action-backed, not
+    column- or row-backed), so field_for takes an action + its runnability attr_pair.
+    '''
+    field_class = action_field
+
+    def field_for(self, action, begin_y, screen_key, attr_pair):
+        return self.field_class(screen_key, action, self, begin_y, attr_pair)
 
 
 class menu_screen(tui_base.screen):
@@ -160,7 +170,7 @@ class menu_screen(tui_base.screen):
             if action.task is not None:
                 w += 1 + widths[1]
             self.app.stdscr.addstr(lineno, x + w - len(action.number), f"{action.number}")
-            shared = field_shared(action.name, nlines, x + w + 1, widths[2], self.app)
+            shared = action_shared(action.name, nlines, x + w + 1, widths[2], self.app)
             if action.is_task:
                 attr_pair = self.task_pair
             elif not action.can_run:
@@ -169,7 +179,8 @@ class menu_screen(tui_base.screen):
                 attr_pair = self.may_run_pair
             else:
                 attr_pair = self.must_run_pair
-            self.fields.append(action_field(len(self.fields), action, shared, lineno, attr_pair))
+            self.fields.append(shared.field_for(action, begin_y=lineno,
+                                                screen_key=len(self.fields), attr_pair=attr_pair))
             lineno += nlines
         if lineno > self.max_y:
             self.max_y = lineno
@@ -234,13 +245,11 @@ class menu_screen(tui_base.screen):
         y = self.max_y + 4
         x = (self.cols - len(question) - entry_len - 1) // 2  # center question/response
         self.app.stdscr.addstr(y, x, question)
-        self.answer = editable_field(1, default,
-                                     field_shared("answer", 1, x + len(question) + 1, entry_len, self.app,
-                                                  validate_fn=int,
-                                                 #alignment="right",
-                                                 ),
-                                     y,
-                                     callback=self.run_callback)
+        shared = editable_single_shared("answer", 1, x + len(question) + 1, entry_len, self.app,
+                                        validate_fn=int,
+                                       #alignment="right",
+                                        )
+        self.answer = shared.edit_text(default, begin_y=y, screen_key=1, callback=self.run_callback)
         self.question = question
         self.callback = callback
 
