@@ -541,7 +541,11 @@
             popup-building out of process_mouse so key + mouse share it).  Then F2 open row / DEL delete, then
             in-place editing (item 3).
 
-### field_shared-factory + field-class refactor (DESIGN AGREED 2026-07-18) -- resume HERE, before F9/F10 ###
+### field_shared-factory + field-class refactor (COMPLETE + Pi-verified 2026-07-18) ###
+
+- STATUS: migration steps 1-4 all done and Pi-verified.  NEXT TASK = F9/F10 menus (see the table_screen
+  navigation section above: "NEXT (per Bruce, start here next session): F9/F10 MENUS").  The design below is
+  retained as the record of what was built.
 
 - Origin: the paint() "# FIX: Recalculate scroll position" (self.scroll is set to 0 and NEVER recalculated, so
   "scroll long lines to fit" is unimplemented -- the wrap/gen_locations/to_index plumbing exists but nothing
@@ -729,7 +733,29 @@
   4. Implement MULTI-LINE grow-via-REFRESH + from_field; drop the *1.2 (row_screen.py:235) and multi placeholders;
      wire row_screen draw_body's REFRESH rebuild (from_field for changed fields).  Verify edits survive REFRESH
      and still submit correctly.  Update/retire the W1 note (obsoleted).
-  5. THEN resume the F9/F10 menus (next feature after this refactor).
+     - STEP 4 DONE + VERIFIED on the Pi (2026-07-18).  NOT behavior-neutral (row editing now grows):
+       - field_shared.line_count(text) mirrors wrap()'s word-breaking; multi_line.grow_if_needed() =
+         line_count(text) > nlines; editable.process_key returns 'REFRESH' after an edit that overflows.
+         multi_line uses EMPTY placeholders (grows, never truncates).
+       - from_field carries the in-progress edit (text + changed + position/selection + attr_pair/attr) so the
+         edit AND the row's column_attr_pair highlight survive the redraw.  editable.deactivate() now clears
+         position/selection so non-active changed fields paint no stray cursor.
+       - row_screen: _refocus (set by process_key on a grow) -> draw_body rebuilds via from_field for changed
+         fields / field_for otherwise, sizes nlines via line_count (dropped *1.2, honors edit_width), re-focuses
+         the grown field.  Resize/validate still drop focus.
+       - TWO bugs found + fixed on the Pi during verify (both committed):
+         (a) crash typing a field full -- the append cursor on an exactly-full line made gen_locations emit a
+             column past ncols -> chgat curses ERR.  Fixed by capping end_x to ncols-pad in gen_locations (it
+             must never yield a location outside the field's rectangle).  [Bruce's steer: fix the source, not
+             trap the error.]
+         (b) row highlight lost after a grow -- from_field wasn't carrying attr_pair, so it fell back to
+             default_attr_pair.  Fixed by passing old.attr_pair/attr through from_field.
+       - MINOR known edge (acceptable, not a bug): the append cursor sitting at an exactly-full multi-line last
+         line is not drawn until the next char is typed (which grows the field) -- gen_locations caps it away
+         rather than showing it past the field.  Retires the W1 "+1 reserved column" hack.
+       - Tests: test_field_grow.py + row_screen draw_body tests + from_field attr_pair assertion; suite 235 Pi.
+  ---- FIELD-SCROLL MIGRATION (steps 1-4) COMPLETE + Pi-verified 2026-07-18. ----
+  5. THEN resume the F9/F10 menus (next feature after this refactor).  <-- START HERE NEXT.
   - Blast radius: field.py + field_shared + all three screens (they construct fields) + the field tests +
     row/menu screen tests.  row_screen & menu_screen still have thin tests -- ALSO drive csv-inv-order on the Pi
     after steps 1 and 4.
