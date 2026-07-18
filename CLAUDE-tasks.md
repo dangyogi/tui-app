@@ -703,11 +703,29 @@
        - Tests updated: test_field.py (3-line) -> *_multi_line; test_field_interaction.py (1-line) ->
          *_single_line; test_table_screen.py / test_field_factory.py isinstance checks -> the `editable` /
          `read_only` behavior mixins.
-       - NOTE: substantial internal change to the live field classes (unified __init__, MRO).  Consider driving
-         csv-inv-order on the Pi to confirm the menu/row/table cells still render + edit (unit tests use Mock
-         apps and can't exercise the curses paths).
+       - VERIFIED on the Pi (Bruce drove csv-inv-order): menu/row/table cells render + edit unchanged.
   3. Implement SINGLE-LINE horizontal column-scroll (the X_single formula); drives self.scroll in paint().
      Update the paint() "# FIX: Recalculate scroll position" comment (this IS the fix).  Verify on the Pi.
+     - STEP 3 DONE (2026-07-18), suite 219 on the Pi:
+       - single_line gains X_single=0.6, _compute_scroll() (the settled formula), a paint() override that sets
+         self.scroll before rendering, and a show_cursor() override.  It REUSES the existing shared
+         wrap/gen_locations/to_index scroll machinery (which already handles a scroll offset + placeholders) --
+         only the driving of self.scroll is new.  (So wrap() still lives on field_shared; a full no-wrap
+         single-line rewrite is deferred as unnecessary -- the shared machinery renders one line correctly with
+         the "<"/">" markers.)
+       - New show_cursor() hook bridges behavior->layout: editable.set_position/set_selection now call
+         self.show_cursor() instead of set_attrs().  Base/multi_line show_cursor = set_attrs() (BEHAVIOR-NEUTRAL
+         for row_screen).  single_line show_cursor repaints only when the scroll window shifts, else set_attrs.
+       - Read-only single-line cells have no cursor -> _compute_scroll returns 0 -> never scroll (unchanged).
+       - ask_question now passes left/right_placeholder "<"/">" so its answer field scrolls with short markers
+         (was the default 6-char "[...]" markers, too wide for the 5-col field).
+       - NOT behavior-neutral (by design): single-line editable fields now scroll.  Live effect today is mostly
+         ask_question (table in-place cell editing isn't wired yet, so table cells keep position None/0 ->
+         scroll 0 -> no visible change).  New tests/test_field_scroll.py (formula, show_cursor decision, a
+         paint->get_col->to_index round-trip).
+       - VERIFIED on the Pi (Bruce): typing a long value into a menu ask_question prompt scrolls correctly.
+       - PRE-EXISTING BUG spotted during this verify (NOT caused by step 3, defer): validation errors are not
+         displayed properly (e.g. an ask_question / validate failure).  Old bug; fix later.  See KNOWN BUGS below.
   4. Implement MULTI-LINE grow-via-REFRESH + from_field; drop the *1.2 (row_screen.py:235) and multi placeholders;
      wire row_screen draw_body's REFRESH rebuild (from_field for changed fields).  Verify edits survive REFRESH
      and still submit correctly.  Update/retire the W1 note (obsoleted).
@@ -723,6 +741,14 @@
   - field_shared family (the factories) = PLAIN THIN SUBCLASSES, NO MI: each just sets field_class (one line);
     the base holds all the factory machinery.  The two hierarchies are NOT coupled.
 - No open items remain blocking; step 1 of the migration plan can start.
+
+### KNOWN BUGS (deferred) ###
+
+- Validation errors not displayed properly (PRE-EXISTING; spotted 2026-07-18 while verifying step 3 on the Pi;
+  NOT introduced by the field refactor).  Repro: trigger a validation failure (e.g. an ask_question / a
+  row_screen Validate/Submit with a bad value) -- the error message doesn't show as it should.  Bruce: old bug,
+  fix later.  claude: not yet investigated; likely in menu_screen.clear_question / the popup_message error path or
+  row_screen.validate's error highlight.  Pick up after the field-scroll migration (step 4) / F9-F10 menus.
 
 ### dependencies ###
 
