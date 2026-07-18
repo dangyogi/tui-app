@@ -4,7 +4,7 @@ from functools import partial
 
 from csv_app.trace import trace
 from . import tui_base
-from .field import field_shared, read_only_field, editable_field
+from .field import single_line_shared
 
 
 class table_screen(tui_base.screen):
@@ -290,8 +290,7 @@ class table_screen(tui_base.screen):
             if len(name) > max_len:
                 max_len = len(name)
             max_lens.append(max_len)
-            self.field_shareds.append(field_shared(name, 1, begin_x, max_len, self.app, column.validate,
-                                                   column.alignment, left_placeholder="<", right_placeholder=">"))
+            self.field_shareds.append(single_line_shared(column, name, begin_x, max_len, self.app))
             begin_x += max_len + 1
         self.width = begin_x - 1
         trace(f"table_screen.draw_body({self.table.name=}, {self.width=})")
@@ -319,13 +318,8 @@ class table_screen(tui_base.screen):
                 break
             row_index = first_row + (lineno - first_line)
             fields = []
-            for col, (column, field_shared) in enumerate(zip(self.columns, self.field_shareds)):
-                if column.can_edit:
-                    f_type = editable_field
-                else:
-                    f_type = read_only_field
-                fields.append(f_type((row_index, col), row.get(column.name), field_shared, lineno,
-                                     attr_pair=column.column_attr_pair(row)))
+            for col, shared in enumerate(self.field_shareds):
+                fields.append(shared.field_for(row, begin_y=lineno, screen_key=(row_index, col)))
             self.row_fields[row_index] = fields
         trace(f"draw_rows: row_fields keys now {sorted(self.row_fields)}")
 
