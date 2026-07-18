@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import Mock, call
 
 from tui_app import field
-from tui_app.field import field_shared, read_only_field, editable_field
+from tui_app.field import field_shared, read_only_single_line, editable_single_line
 
 
 @pytest.fixture(autouse=True)
@@ -27,7 +27,7 @@ def text():
 
 @pytest.fixture
 def e_field(share_1_line, text):
-    e_field =  editable_field(1, text, share_1_line, begin_y=10)
+    e_field =  editable_single_line(1, text, share_1_line, begin_y=10)
     e_field.pos_attr = 'REVERSE'
     e_field.attr_pair = 'NORMAL'
     e_field.selection_pair = 'YELLOW'
@@ -105,7 +105,7 @@ def test_editable_activate_selects_all(e_field):
 
 
 def test_read_only_activate_deactivate_toggle(share_1_line):
-    f = read_only_field(0, "hello", share_1_line, begin_y=10, paint=False)
+    f = read_only_single_line(0, "hello", share_1_line, begin_y=10, paint=False)
     f.reverse_attr = Mock(name="reverse_attr")
     f.activate()
     f.deactivate()
@@ -114,7 +114,7 @@ def test_read_only_activate_deactivate_toggle(share_1_line):
 
 def test_gen_locations_right_align_offsets_by_pad():
     fs = field_shared("f", nlines=1, begin_x=30, ncols=20, app=Mock(name="app"), alignment="right")
-    f = read_only_field(0, "42", fs, begin_y=10)          # "42" right-aligned in 20 cols -> pad 18
+    f = read_only_single_line(0, "42", fs, begin_y=10)    # "42" right-aligned in 20 cols -> pad 18
     assert f.pads == [18]
     # highlighting text indices 0..2 must land on the digits (begin_x + pad), not the left padding
     assert list(f.gen_locations(0, 2)) == [(10, 30 + 18, 2)]
@@ -122,14 +122,14 @@ def test_gen_locations_right_align_offsets_by_pad():
 
 def test_gen_locations_left_align_no_offset():
     fs = field_shared("f", nlines=1, begin_x=30, ncols=20, app=Mock(name="app"), alignment="left")
-    f = read_only_field(0, "42", fs, begin_y=10)
+    f = read_only_single_line(0, "42", fs, begin_y=10)
     assert f.pads == [0]
     assert list(f.gen_locations(0, 2)) == [(10, 30, 2)]
 
 
 def test_to_index_and_get_col_right_align():
     fs = field_shared("f", nlines=1, begin_x=30, ncols=20, app=Mock(name="app"), alignment="right")
-    f = editable_field(0, "42", fs, begin_y=10)          # painted -> starts=[0], pads=[18]
+    f = editable_single_line(0, "42", fs, begin_y=10)    # painted -> starts=[0], pads=[18]
     # clicking on the digits maps to the right text index
     assert f.to_index(10, 30 + 18) == 0                  # '4'
     assert f.to_index(10, 30 + 19) == 1                  # '2'

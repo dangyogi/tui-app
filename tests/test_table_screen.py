@@ -13,7 +13,7 @@ import pytest
 
 from tui_app import tui_base
 from tui_app.table_screen import table_screen
-from tui_app.field import read_only_field, editable_field
+from tui_app.field import editable
 
 
 @pytest.fixture(autouse=True)
@@ -112,12 +112,12 @@ def test_row_fields_built(columns):
     # each row holds one field per column, in column order
     for fields in scr.row_fields.values():
         assert len(fields) == len(columns)
-    # editable columns -> editable_field; read-only columns -> plain read_only_field
+    # editable columns -> editable behavior mixin; read-only columns -> not
     row0 = scr.row_fields[0]
-    assert not isinstance(row0[0], editable_field)   # item: read-only
-    assert isinstance(row0[1], editable_field)       # num_pkgs: editable
-    assert not isinstance(row0[2], editable_field)   # unit: read-only
-    assert isinstance(row0[3], editable_field)       # num_units: editable
+    assert not isinstance(row0[0], editable)   # item: read-only
+    assert isinstance(row0[1], editable)       # num_pkgs: editable
+    assert not isinstance(row0[2], editable)   # unit: read-only
+    assert isinstance(row0[3], editable)       # num_units: editable
 
 
 def make_drawn_screen(columns, n_rows, lines=6):

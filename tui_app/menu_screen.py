@@ -5,10 +5,10 @@ import math
 from csv_app import action
 from csv_app.trace import trace
 from . import tui_base
-from .field import field_shared, read_only_field, editable_single_shared
+from .field import field_shared, read_only_single_line, editable_single_shared
 
 
-class action_field(read_only_field):
+class action_field(read_only_single_line):
     def __init__(self, screen_key, action, field_shared, begin_y, attr_pair):
         super().__init__(screen_key, action.name, field_shared, begin_y, attr_pair=attr_pair)
         self.action = action

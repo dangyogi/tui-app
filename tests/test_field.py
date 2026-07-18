@@ -1,7 +1,7 @@
 # test_field.py
 
 import pytest
-from tui_app.field import field_shared, read_only_field, editable_field
+from tui_app.field import field_shared, read_only_multi_line, editable_multi_line
 
 
 @pytest.fixture
@@ -35,15 +35,15 @@ def text():
 
 @pytest.fixture
 def ro_field(text, share_3_lines):
-    return read_only_field(0, text, share_3_lines, begin_y=10, paint=False)
+    return read_only_multi_line(0, text, share_3_lines, begin_y=10, paint=False)
 
 @pytest.fixture
 def ro_field_empty(share_3_lines):
-    return read_only_field(0, "", share_3_lines, begin_y=10, paint=False)
+    return read_only_multi_line(0, "", share_3_lines, begin_y=10, paint=False)
 
 @pytest.fixture
 def e_field(text, share_3_lines):
-    return editable_field(0, text, share_3_lines, begin_y=10, paint=False)
+    return editable_multi_line(0, text, share_3_lines, begin_y=10, paint=False)
 
 
 def test_gen_locations(ro_field):

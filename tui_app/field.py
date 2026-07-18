@@ -5,6 +5,30 @@ r'''This handles user input fields.  Each field is a simple rectangle.  It will 
 These are created each time the screen.draw is called.
 
 Therefore, they only see one screen size during their lifetime and only need to draw the text once.
+
+Class structure (full-mixin, decided 2026-07-18):
+
+  field       -- base: shared per-cell state, the single __init__, and (for now) the layout/index math
+                 shared by single_line and multi_line.
+  single_line -- LAYOUT mixin (specializes in step 3: horizontal column-scroll, no wrap).
+  multi_line  -- LAYOUT mixin (specializes in step 4: line-grow via REFRESH).
+  read_only   -- BEHAVIOR mixin: activate/deactivate = reverse_attr; set_attrs = no-op.
+  editable    -- BEHAVIOR mixin: activate = select-all; text editing, selection, cursor.
+
+Concrete cells = one BEHAVIOR + one LAYOUT + the base, e.g.:
+
+  read_only_single_line(read_only, single_line, field)
+  editable_single_line (editable,  single_line, field)
+  read_only_multi_line (read_only, multi_line,  field)
+  editable_multi_line  (editable,  multi_line,  field)
+
+Screens never name a concrete class -- they configure a field_shared (a factory) and ask it for fields.
+
+MIGRATION NOTE (step 2, 2026-07-18): the single/multi LAYOUT mixins are still empty; the layout/index
+math (paint, gen_locations, get_lineno, get_col, to_index) and wrap() currently live on `field` /
+field_shared and are shared by both, so single_line and multi_line behave identically for now.  They
+diverge in step 3 (single-line scroll) and step 4 (multi-line grow), at which point wrap() moves onto
+multi_line.
 '''
 
 from .tui_base import curses, bstate_str, trace
@@ -163,17 +187,21 @@ class field_shared:
             yield None, 0, ' ' * self.ncols
 
 
-class read_only_field:
-    default_attr_pair = 0x01    # attr_pair 0x01 is black on red
-    can_edit = False
+class field:
+    r'''Base for all on-screen field cells: shared per-cell state, the single __init__, and (for now)
+    the layout/index math shared by single_line and multi_line.  Concrete cells combine a BEHAVIOR
+    mixin + a LAYOUT mixin + this base (see the module docstring).
+    '''
     changed = False
 
-    def __init__(self, screen_key, text, field_shared, begin_y, paint=True, attr_pair=None, attr=0):
+    def __init__(self, screen_key, text, field_shared, begin_y, paint=True, attr_pair=None,
+                 attr=0, callback=None):
         self.screen_key = screen_key   # screen-assigned id: an index, or (row, col) for table_screen
         self.text = text
         self.field_shared = field_shared
         self.begin_y = begin_y
         self.scroll = 0
+        self.callback = callback        # used by editable cells (harmless on read-only)
         self.pads = [0] * self.nlines   # per-line left text-offset; paint() overrides (right-align)
         if attr_pair is None:
             self.attr_pair = self.default_attr_pair
@@ -208,9 +236,6 @@ class read_only_field:
     def validate(self):
         return self.field_shared.validate_fn(self.text)
 
-    def enclose(self, y, x):
-        return False
-
     def paint(self):
         r'''Completely replaces everything visible on the screen (ie, curses attrs).
 
@@ -228,17 +253,6 @@ class read_only_field:
             self.pads.append(pad)
             stdscr.addstr(y, self.begin_x, line, attr)
         self.set_attrs()
-
-    def set_attrs(self, reset=False):
-        pass
-
-    def activate(self):
-        r'''Highlight this (read-only) field as the active/selected one.'''
-        self.reverse_attr()
-
-    def deactivate(self):
-        r'''Un-highlight; reverse_attr toggles, so this is the same call as activate().'''
-        self.reverse_attr()
 
     def chgat(self, start, length, attr):
         r'''This takes indexes into self.text.
@@ -329,38 +343,15 @@ class read_only_field:
             return min(self.ncols - 1, self.pads[-1] + index - self.starts[-1])
         return None
 
-
-class editable_field(read_only_field):
-    pos_attr = curses.A_REVERSE
-    selection_pair = 0x06        # black on yellow
-    default_attr_pair = 0x70     # white on black
-    can_edit = True
-
-    position = None              # text index
-    selection_len = 0
-    in_select = False
-
-    def __init__(self, screen_key, text, field_shared, begin_y, paint=True, attr_pair=None, callback=None):
-        super().__init__(screen_key, text, field_shared, begin_y, paint=paint, attr_pair=attr_pair)
-        self.callback = callback
-
-    def get_text(self):
-       #trace(f"{self.name}.get_text() -> {self.text!r}")
-        return self.text
-
-    def enclose(self, y, x):
-        ans = self.begin_y <= y < self.begin_y + self.nlines and \
-              self.begin_x <= x < self.begin_x + self.ncols
-       #trace(f"{self.name}.enclose({y=}, {x=}) -> {ans}")
-        return ans
-
     def to_index(self, y, x):
         r'''Converts screen coordinates to text index.
         '''
         assert y >= self.begin_y and y < self.begin_y + self.nlines, \
-               f"editable_field({self.name}).to_index({y=}, {x=}): y out of bounds {self.begin_y=}, {self.nlines=}"
+               f"{self.__class__.__name__}({self.name}).to_index({y=}, {x=}): y out of bounds " \
+               f"{self.begin_y=}, {self.nlines=}"
         assert x >= self.begin_x and x < self.begin_x + self.ncols, \
-               f"editable_field({self.name}).to_index({y=}, {x=}): x out of bounds {self.begin_x=}, {self.ncols=}"
+               f"{self.__class__.__name__}({self.name}).to_index({y=}, {x=}): x out of bounds " \
+               f"{self.begin_x=}, {self.ncols=}"
         y -= self.begin_y
         x -= self.begin_x
         start_x = self.starts[y]
@@ -387,6 +378,64 @@ class editable_field(read_only_field):
             if ans >= end_x:
                 ans = end_x - 1
        #trace(f"{self.name}.to_index({y=}, {x=}) -> {ans}")
+        return ans
+
+
+class single_line:
+    r'''LAYOUT mixin: single-line cell.
+
+    Currently empty -- inherits the shared layout on `field`.  Step 3 gives it its own horizontal
+    column-scroll paint / index math (no wrap; [<]/[>] placeholders).
+    '''
+
+
+class multi_line:
+    r'''LAYOUT mixin: multi-line cell.
+
+    Currently empty -- inherits the shared wrap-based layout on `field` (wrap() lives on field_shared).
+    Step 4 gives it line-grow-via-REFRESH, at which point wrap() moves onto this mixin.
+    '''
+
+
+class read_only:
+    r'''BEHAVIOR mixin: a non-editable cell.'''
+    default_attr_pair = 0x01    # attr_pair 0x01 is black on red
+    can_edit = False
+
+    def enclose(self, y, x):
+        return False
+
+    def set_attrs(self, reset=False):
+        pass
+
+    def activate(self):
+        r'''Highlight this (read-only) field as the active/selected one.'''
+        self.reverse_attr()
+
+    def deactivate(self):
+        r'''Un-highlight; reverse_attr toggles, so this is the same call as activate().'''
+        self.reverse_attr()
+
+
+class editable:
+    r'''BEHAVIOR mixin: an editable cell (text entry, selection, cursor).'''
+    pos_attr = curses.A_REVERSE
+    selection_pair = 0x06        # black on yellow
+    default_attr_pair = 0x70     # white on black
+    can_edit = True
+
+    position = None              # text index
+    selection_len = 0
+    in_select = False
+
+    def get_text(self):
+       #trace(f"{self.name}.get_text() -> {self.text!r}")
+        return self.text
+
+    def enclose(self, y, x):
+        ans = self.begin_y <= y < self.begin_y + self.nlines and \
+              self.begin_x <= x < self.begin_x + self.ncols
+       #trace(f"{self.name}.enclose({y=}, {x=}) -> {ans}")
         return ans
 
     def set_attrs(self, reset=False):
@@ -419,7 +468,7 @@ class editable_field(read_only_field):
         r'''if positive selection (end >= start):
               start is leftmost selected char and end is one past rightmost selected char.
               self.selection_len ends up >= 0
-           otherwise 
+           otherwise
               start is one past rightmost selected char and end is leftmost selected char.
               self.selection_len ends up < 0, which essentially reverses start and end.
         '''
@@ -575,28 +624,38 @@ class editable_field(read_only_field):
         self.set_attrs(reset=True)
 
 
+# --- concrete field cells (one BEHAVIOR + one LAYOUT + the base) -----------------------------------
+
+class read_only_single_line(read_only, single_line, field):
+    pass
+
+class editable_single_line(editable, single_line, field):
+    pass
+
+class read_only_multi_line(read_only, multi_line, field):
+    pass
+
+class editable_multi_line(editable, multi_line, field):
+    pass
+
+
 # --- field_shared factory family -------------------------------------------------------------------
 #
 # Thin subclasses that parallel the field classes: each just names the concrete field_class it builds.
 # The base field_shared holds all the factory machinery.  Adding a field kind is adding a subclass --
 # no central switch to edit -- and apps can define their own (e.g. menu_screen's action_shared).
-#
-# STEP-1 NOTE (migration): single_* and multi_* both point at the CURRENT read_only_field /
-# editable_field for now.  The single-vs-multi split into distinct field classes happens in step 2;
-# until then these subclasses differ only in the conventions their pickers apply (nlines, placeholders,
-# alignment).  This is deliberately behavior-neutral.
 
 class read_only_single_shared(field_shared):
-    field_class = read_only_field
+    field_class = read_only_single_line
 
 class editable_single_shared(field_shared):
-    field_class = editable_field
+    field_class = editable_single_line
 
 class read_only_multi_shared(field_shared):
-    field_class = read_only_field
+    field_class = read_only_multi_line
 
 class editable_multi_shared(field_shared):
-    field_class = editable_field
+    field_class = editable_multi_line
 
 
 def single_line_shared(column, name, begin_x, ncols, app):
@@ -616,4 +675,3 @@ def multi_line_shared(column, begin_x, ncols, app, *, nlines, creating):
     editable = ((not column.calculated) or column.can_edit) if creating else column.can_edit
     cls = editable_multi_shared if editable else read_only_multi_shared
     return cls(column.name, nlines, begin_x, ncols, app, column.validate, column=column)
-
