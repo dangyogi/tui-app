@@ -775,11 +775,12 @@
   per-screen help text (F1) in sync with the spec as each piece lands.
 
 - Ordered tasks (each = small batch, tests folded in, verify on the Pi):
-  1. F9/F10 keyboard menus (STARTED 2026-07-19).  Factor the two popup builders out of
-     table_screen.process_mouse (_open_row_popup / _open_screen_popup); F10 -> screen popup, F9 -> row
-     popup for the focused row (focus the top visible row first if nothing is focused).  Mouse path
-     calls the same helpers.  Update show_help.  [mouse right-press-drag-select refinement DEFERRED.]
-  2. table_screen F2 = open focused row in row_screen (View/Edit); same as the row-menu's View/Edit.
+  1. F9/F10 keyboard menus -- DONE + Pi-verified 2026-07-19.  Factored _open_row_popup /
+     _open_screen_popup out of process_mouse; F10 -> screen popup, F9 -> row popup for the focused row
+     (focuses top visible row first if none).  [mouse right-press-drag-select refinement DEFERRED.]
+  2. table_screen F2 = open focused row in row_screen -- DONE 2026-07-19 (suite 244), NEEDS Pi verify.
+     Runs the row's view_edit_command ('View/Edit', a table_screen class attr) and returns the
+     row_screen; focuses top visible row first if none; no-op if not offered / no rows.
   3. table_screen DEL = delete focused row with y/n confirm (+ auto-advance); INS = create row.
      (DEL only when NOT editing; during a cell edit DEL = delete char.)
   4. table_screen in-place cell EDITING: SPACE / printable char (NOT space-insert) / double-click
