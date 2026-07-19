@@ -24,6 +24,7 @@ def fake_field(screen_key, can_edit, handled=False):
     f = Mock(name=f"field{screen_key}")
     f.screen_key = screen_key
     f.can_edit = can_edit
+    f.changed = False
     f.process_key.side_effect = (lambda key: None) if handled else (lambda key: key)
     return f
 
@@ -66,6 +67,34 @@ def test_key_routed_to_active_field():
     s.active_field = f
     assert s.process_key('x') is None        # active field handled it
     f.process_key.assert_called_once_with('x')
+
+
+def test_esc_backs_when_unchanged():
+    back = object()
+    s = make_screen([fake_field(0, False), fake_field(1, True)])
+    s.back = back
+    assert s.process_key('\x1B') is back        # view-only -> back
+
+
+def test_esc_deselects_active_field_then_backs_when_unchanged():
+    back = object()
+    f = fake_field(0, True)
+    s = make_screen([f])
+    s.back = back
+    s.active_field = f
+    assert s.process_key('\x1B') is back        # deselect + back (nothing changed)
+    assert s.active_field is None               # field was deselected
+
+
+def test_esc_blocked_with_unapplied_changes():
+    f = fake_field(0, True)
+    f.changed = True
+    s = make_screen([f])
+    s.back = object()
+    s.cols = 80
+    s.button_y = 10
+    assert s.process_key('\x1B') is None        # unapplied changes -> stay
+    assert s.msg_len > 0                        # a message was shown
 
 
 def test_grow_refresh_records_refocus():

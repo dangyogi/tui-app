@@ -107,6 +107,14 @@ class row_screen(tui_base.screen):
                 self._refocus = self.active_field.screen_key
             if tui_base.event_handled(key):
                 return key
+        if key == '\x1B':                       # Esc
+            if self.active_field is not None:
+                self.activate_field(None)       # deselect the field, then fall through to Back
+            if any(field.changed for field in self.fields):
+                self.message("Unapplied changes: use the buttons below to leave",
+                             tui_base.curses.color_pair(self.error_msg_attr))
+                return None                     # don't leave with unapplied changes
+            return self.back                    # nothing to apply: back to the previous screen
         if key == '\t':
             if self.active_field is None:
                 offset = 0

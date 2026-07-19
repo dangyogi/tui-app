@@ -1,0 +1,106 @@
+                        KEYBOARD                        MOUSE
+popup_menus:
+   select               UP, DOWN                        LEFT PRESS and DRAG (outside of menu deselects everything)
+   execute              ENTER. SPACE                    LEFT RELEASE
+   dismiss              ESC                             LEFT RELEASE outside menu
+popup_messages:
+   dismiss              ESC
+
+base screen:
+   add "F1=Help" to first row, right
+   back                 ESC
+   help                 F1
+   exit app             F? (remove 'q' in screen.run, message if uncommitted changes)
+   abort app            F? again on message box (add callback to popup_message,
+                                                 passes key but doesn't show it on screen)
+
+field edit:
+   accept               ENTER
+   abort (resets text)  ESC
+   ins text             any ascii char (also deletes selection)
+   del selection        DEL, BACKSPACE
+   del char             DEL, BACKSPACE
+   move                 LEFT, RIGHT, UP, DOWN           LEFT CLICK
+   select                                               LEFT PRESS and DRAG
+   select word                                          LEFT DBL CLICK
+   select all                                           LEFT TPL CLICK
+
+table_screen:
+   select               UP, DOWN/ENTER,                 LEFT CLICK
+                        LEFT/BTAB, RIGHT/TAB, 
+   scroll               PGUP, PGDN                      SCROLL WHEEL
+   top, bottom          HOME, END
+   open screen popup    F10                             RIGHT CLICK (top 2 rows)
+   open row popup       F9                              RIGHT CLICK (on row)
+   view, edit           F2
+   delete row           DEL (w/confirmation)
+   create row           INS
+   start field edit     SPACE, any ascii char           LEFT DBL CLICK (also selects)
+      to capture DEL, LEFT, RIGHT
+      accept edit       ENTER, UP, DOWN (after started)
+      abort edit        ESC (after started)
+
+menu_screen:
+    select              UP, DOWN
+    execute (then DOWN) ENTER, SPACE                    LEFT CLICK
+    action.reset        'r' (temp, will be removed later)
+
+ask_question answer:
+    accept              ENTER
+    abort               ESC
+
+row_screen:
+    back ignored if row changed and not Applied -- no message
+    remove validate button
+    rename Submit button to Apply
+    Cancel does forced back
+    Apply updates, then back
+    select              TAB, BTAB
+    accept field        ENTER, TAB, BTAB
+       does validate
+    abort field         ESC (also deselects the field, so second ESC goes back)
+    select button       part of TAB seq
+    execute button      ENTER                           LEFT CLICK
+
+
+BTW, I updated line 621 in field.py
+
+
+RESOLVED (2026-07-19, from claude's review + Bruce's answers):
+
+  ESC precedence (applies everywhere): (1) close popup if one is open; else
+    (2) abort/deselect the active field if editing; else (3) Back.
+
+  exit/abort app keys: DEFERRED -- revisit after F10 exists; the F10 screen menu
+    already offers Exit/Abort, which may be enough (then no dedicated key needed).
+
+  field edit:
+    - a printable char starts+inserts (replacing the select-all); SPACE starts edit
+      but does NOT insert (just enters edit mode).
+    - DEL = delete forward (char at cursor; no-op at end -- field.py:621); BACKSPACE
+      = delete backward (char before cursor).
+    - abort (ESC) resets to the value at the START of THIS edit session (snapshot on
+      activate), so re-entering then aborting only undoes the current visit's changes.
+      NEEDS DESIGN: reconcile the `changed` flag when abort returns text to its original
+      construction value (see checklist).
+
+  table_screen:
+    - ENTER (not editing) = move down (hence SPACE, not ENTER, starts edit).
+    - accept edit also includes TAB / BTAB (commit + move to next / prev editable col).
+    - double-click = start cell edit (NOT open row form); open row form = F2 / F9-menu.
+
+  popup mouse gesture: popup OPENS on RIGHT-click (LEFT is cell-select).  A single-
+    gesture right-press-drag-release (popup under the mouse) is a possible refinement;
+    DEFERRED to when we do popup mouse handling.  F9/F10 (keyboard) don't need it.
+
+  popup_message dismiss: ESC, ENTER, SPACE, or LEFT CLICK.  Other keys are ignored
+    (NOT dismissed) so it's obvious the key was thrown away.
+
+  row_screen:
+    - remove Validate button; buttons are Cancel + Apply (create mode keeps 'Create').
+    - accept field (ENTER/TAB/BTAB) ALWAYS validates + recomputes calculated fields into
+      self.row (the copy) so the user sees the impact immediately -- but does NOT write
+      to the master row / db.
+    - Apply (was Submit) = write self.row to master (db) + Back.  Cancel = discard + Back.
+    - ESC: only Backs when nothing changed (view-only); with unapplied changes it does
+      nothing (no message) -- leave via Cancel or Apply.
