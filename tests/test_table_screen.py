@@ -59,7 +59,7 @@ class FakeRow:
 
     get() raises KeyError for an unknown column, like the real row.
     '''
-    row_popup_commands = ('View', 'Delete')
+    row_popup_commands = ('View/Edit', 'Delete')
 
     def __init__(self, **values):
         self._values = values
@@ -341,7 +341,7 @@ def test_f9_opens_row_popup_for_focused_row(columns, monkeypatch):
     scr._focus_cell(2, 1)                         # focus row 2
     assert scr.process_key('KEY_F(9)') is None
     assert scr.popup is not None
-    assert rec['commands'] == ('View', 'Delete')  # the row's row_popup_commands
+    assert rec['commands'] == ('View/Edit', 'Delete')  # the row's row_popup_commands
     assert scr.popup_y == 2                       # on-screen offset of the focused row
 
 
@@ -366,3 +366,48 @@ def test_f9_noop_with_no_rows(columns, monkeypatch):
     monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory({}))
     scr.process_key('KEY_F(9)')
     assert scr.popup is None
+
+
+def test_f2_opens_focused_row(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 5)
+    scr._focus_cell(2, 1)
+    sentinel = Mock(name="row_screen")
+    row = scr.rows[2]
+    monkeypatch.setattr(row, "execute",
+                        lambda screen, cmd: sentinel if cmd == 'View/Edit' else None)
+    assert scr.process_key('KEY_F(2)') is sentinel   # returns the row_screen to switch to
+
+
+def test_f2_focuses_top_visible_row_when_nothing_focused(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 5)
+    seen = {}
+    def fake_execute(screen, cmd):
+        seen['row_index'] = scr.active_field.screen_key[0]
+        return None
+    for r in scr.rows:
+        monkeypatch.setattr(r, "execute", fake_execute)
+    assert scr.active_field is None
+    scr.process_key('KEY_F(2)')
+    assert scr.active_field is not None               # focused the top visible row first
+    assert seen['row_index'] == scr.first_row
+
+
+def test_f2_noop_when_view_edit_not_offered(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 5)
+    scr._focus_cell(1, 1)
+    row = scr.rows[1]
+    monkeypatch.setattr(type(row), "row_popup_commands", ('Delete',))   # no View/Edit
+    called = []
+    monkeypatch.setattr(row, "execute", lambda screen, cmd: called.append(cmd))
+    assert scr.process_key('KEY_F(2)') is None
+    assert called == []                              # execute not called
+
+
+def test_f2_noop_with_no_rows(columns):
+    scr = table_screen(FakeTable("Inv", columns, []))
+    scr.app = Mock(name="app")
+    scr.lines = 24
+    scr.cols = 80
+    scr.init()
+    scr.draw_body()
+    assert scr.process_key('KEY_F(2)') is None

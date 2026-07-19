@@ -10,6 +10,7 @@ from .field import single_line_shared
 class table_screen(tui_base.screen):
     scroll_amount = 3
     error_attr = 0x01
+    view_edit_command = 'View/Edit'    # row popup command F2 runs to open the focused row
 
     def __init__(self, table, back=None, validate_fn=None, **select):
         r'''The validate_fn is passed the table and returns an error_message or None.
@@ -85,6 +86,8 @@ class table_screen(tui_base.screen):
                 self._open_screen_popup()
             case 'KEY_F(9)':                    # row menu for the focused row
                 self._open_row_popup_for_focus()
+            case 'KEY_F(2)':                    # open the focused row in row_screen (View/Edit)
+                return self._view_edit_focused_row()
             case 'KEY_DOWN':                    # move cell focus down one row (same column)
                 self._move_focus_row(1)
             case 'KEY_UP':                      # move cell focus up one row (same column)
@@ -145,6 +148,23 @@ class table_screen(tui_base.screen):
         row_index = self.active_field.screen_key[0]
         y = (row_index - self.first_row) + 2   # screen line of that row
         self._open_row_popup(row_index, y + 1)
+
+    def _view_edit_focused_row(self):
+        r'''F2: open the focused row (runs the row's view_edit_command, e.g. "View/Edit").  Focus the
+        top visible row first if nothing is focused.  Returns the screen to switch to (the row's
+        execute result, normally a row_screen), or None to stay.
+        '''
+        if not self.rows:
+            return None
+        if self.active_field is None:
+            self._move_focus_row(1)             # focus the top visible row
+        if self.active_field is None:
+            return None
+        row = self.rows[self.active_field.screen_key[0]]
+        if self.view_edit_command not in row.row_popup_commands:
+            trace(f"table_screen._view_edit_focused_row: {self.view_edit_command!r} not offered by row")
+            return None
+        return row.execute(self, self.view_edit_command)
 
     def scroll_up(self, nlines):
         trace(f"scroll_up({nlines})")
@@ -275,6 +295,7 @@ class table_screen(tui_base.screen):
             "PgUp / PgDn ........ scroll a page",
             "Home / End ......... scroll to top / bottom",
             "F10 / F9 ........... screen menu / row menu",
+            "F2 ................. open the focused row",
             "Esc ................ back",
             "F1 ................. this help",
         ]
