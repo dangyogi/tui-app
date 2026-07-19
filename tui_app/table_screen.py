@@ -316,10 +316,13 @@ class table_screen(tui_base.screen):
     def draw_body(self):
         self.rows = self.table.get_rows(self.app, **self.select)
         trace(f"draw_body(): {len(self.rows)=}")
+        # remember the focused cell so it survives a full redraw (resize, or returning from a row
+        # form / popup); restored after the fields are rebuilt, if that row is still on screen
+        focus_key = self.active_field.screen_key if self.active_field is not None else None
         max_lens = []
         column_names = []
         self.row_fields = {}   # {abs_row_index -> [one field per column]}, (re)built by draw_rows
-        self.active_field = None   # a full (re)draw recreates fields, so focus is dropped (e.g. on resize)
+        self.active_field = None   # fields are recreated below; focus is restored from focus_key
         self.field_shareds = []
         begin_x = 0
         for column in self.columns:
@@ -357,6 +360,8 @@ class table_screen(tui_base.screen):
                           #tui_base.curses.color_pair(0xF0))       # not seeing a difference between high/low white...
                           #tui_base.curses.color_pair(0xFf))       # solid white...
         self.draw_rows(self.first_row)
+        if focus_key is not None and focus_key[0] in self.row_fields:
+            self._focus_cell(*focus_key)          # restore focus after a full redraw
 
     def draw_rows(self, first_row=0, first_line=2, nlines=None):
         if nlines is None:

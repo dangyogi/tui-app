@@ -181,12 +181,20 @@ def test_focus_dropped_when_scrolled_off(columns):
     assert scr.active_field is None
 
 
-def test_focus_dropped_on_full_redraw(columns):
+def test_focus_preserved_on_full_redraw(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(0, 1)
     assert scr.active_field is not None
-    scr.draw_body()                              # full redraw recreates fields -> focus dropped
-    assert scr.active_field is None
+    scr.draw_body()                              # full redraw recreates fields, restores focus
+    assert scr.active_field is scr.row_fields[0][1]   # same cell re-focused (new field object)
+
+
+def test_focus_dropped_on_redraw_when_row_gone(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(2, 1)
+    scr.table._rows = scr.table._rows[:1]        # rows 1,2 removed before the redraw
+    scr.draw_body()
+    assert scr.active_field is None              # focused row no longer on screen -> focus dropped
 
 
 def test_first_keypress_focuses_top_visible_first_editable(columns):

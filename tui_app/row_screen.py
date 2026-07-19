@@ -111,7 +111,7 @@ class row_screen(tui_base.screen):
             if self.active_field is not None:
                 self.activate_field(None)       # deselect the field, then fall through to Back
             if any(field.changed for field in self.fields):
-                self.message("Unapplied changes: use the buttons below to leave",
+                self.message("Unapplied changes: use the buttons above to leave",
                              tui_base.curses.color_pair(self.error_msg_attr))
                 return None                     # don't leave with unapplied changes
             return self.back                    # nothing to apply: back to the previous screen
