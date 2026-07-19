@@ -24,10 +24,12 @@ Concrete cells = one BEHAVIOR + one LAYOUT + the base, e.g.:
 
 Screens never name a concrete class -- they configure a field_shared (a factory) and ask it for fields.
 
-LAYOUT split: single_line has its OWN paint (no-wrap: char-scroll + column/edit alignment + [<>]
-placeholders).  multi_line uses the base field.paint, which calls field_shared.wrap (grows, always
-left-aligned in practice).  The index math (gen_locations, get_lineno, get_col, to_index) stays shared
-on `field` and reads self.starts / self.pads / self.scroll, which both paints populate consistently.
+LAYOUT split: each layout mixin owns its paint.  single_line.paint is no-wrap (char-scroll +
+column/edit alignment + [<>] placeholders); multi_line.paint wraps via field_shared.wrap (grows,
+always left-aligned in practice).  The base `field` holds no paint -- only shared state and the index
+math (gen_locations, get_lineno, get_col, to_index), which reads self.starts / self.pads / self.scroll,
+populated consistently by both paints.  wrap() stays on field_shared (with align/first_non_blank/etc,
+which single_line.paint also uses).
 '''
 
 from .tui_base import curses, bstate_str, trace
@@ -269,24 +271,6 @@ class field:
     def validate(self):
         return self.field_shared.validate_fn(self.text)
 
-    def paint(self):
-        r'''Completely replaces everything visible on the screen (ie, curses attrs).
-
-        Renders self.text (wrapped, from self.scroll) plus the cursor/selection.  single_line drives
-        self.scroll from the cursor before delegating here; multi_line does not scroll yet (step 4).
-        '''
-       #trace(f"{self.name}.paint({self.text=!r})")
-        self.starts = []
-        self.pads = []     # per-line left x-offset of the text (0 for left-aligned)
-        stdscr = self.app.stdscr
-        attr = curses.color_pair(self.attr_pair) + self.attr
-        for y, (start, pad, line) in zip(range(self.begin_y, self.begin_y + self.nlines),
-                                         self.field_shared.wrap(self.text, self.scroll)):
-            self.starts.append(start)
-            self.pads.append(pad)
-            stdscr.addstr(y, self.begin_x, line, attr)
-        self.set_attrs()
-
     def show_cursor(self):
         r'''Redraw the cursor/selection after self.position changed.  Base (and multi_line): no
         horizontal scroll, so just set the attrs.  single_line overrides to scroll the cursor into
@@ -487,11 +471,26 @@ class single_line:
 class multi_line:
     r'''LAYOUT mixin: multi-line cell that grows (never scrolls).
 
-    Reuses the shared wrap-based layout on `field` (wrap() still lives on field_shared).  When an edit
-    makes the text need more than nlines wrapped lines, grow_if_needed() reports it; the editing code
-    returns 'REFRESH' and the screen re-lays-out the field one (or more) lines taller.  No horizontal
-    scroll and no [<]/[>] placeholders (multi_line_shared uses empty markers).
+    paint() wraps self.text (via field_shared.wrap) into nlines lines, always left-aligned in practice.
+    When an edit makes the text need more than nlines wrapped lines, grow_if_needed() reports it; the
+    editing code returns 'REFRESH' and the screen re-lays-out the field one (or more) lines taller.  No
+    horizontal scroll and no [<]/[>] placeholders (multi_line_shared uses empty markers).
     '''
+
+    def paint(self):
+        r'''Render self.text wrapped into nlines lines (from self.scroll, which stays 0), then the
+        cursor/selection.  Records starts[]/pads[] per line for the shared index math.
+        '''
+        self.starts = []
+        self.pads = []     # per-line left x-offset of the text (0 for left-aligned)
+        stdscr = self.app.stdscr
+        attr = curses.color_pair(self.attr_pair) + self.attr
+        for y, (start, pad, line) in zip(range(self.begin_y, self.begin_y + self.nlines),
+                                         self.field_shared.wrap(self.text, self.scroll)):
+            self.starts.append(start)
+            self.pads.append(pad)
+            stdscr.addstr(y, self.begin_x, line, attr)
+        self.set_attrs()
 
     def grow_if_needed(self):
         return self.field_shared.line_count(self.text) > self.nlines
