@@ -59,6 +59,8 @@ class FakeRow:
 
     get() raises KeyError for an unknown column, like the real row.
     '''
+    row_popup_commands = ('View', 'Delete')
+
     def __init__(self, **values):
         self._values = values
 
@@ -67,6 +69,9 @@ class FakeRow:
 
     def human_key(self):
         return self.get("item")
+
+    def execute(self, screen, command):
+        return 'Continue'
 
 
 @pytest.fixture
@@ -301,3 +306,63 @@ def test_left_right_noop_in_read_only_table():
     assert scr.editable_cols == []
     scr.process_key('KEY_RIGHT')
     assert scr.active_field is None
+
+
+def fake_popup_menu_factory(record):
+    def fake_popup_menu(title, screen, commands, execute, y, x):
+        record.update(title=title, commands=commands, y=y, x=x)
+        return Mock(name="popup")
+    return fake_popup_menu
+
+
+def test_f10_opens_screen_popup(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    rec = {}
+    monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory(rec))
+    assert scr.process_key('KEY_F(10)') is None
+    assert scr.popup is not None
+    assert rec['title'] == "Screen"
+    assert scr.popup_y is None
+
+
+def test_f10_keeps_existing_screen_popup(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory({}))
+    scr.process_key('KEY_F(10)')
+    first = scr.popup
+    scr.process_key('KEY_F(10)')                 # pressing F10 again keeps the same popup
+    assert scr.popup is first
+
+
+def test_f9_opens_row_popup_for_focused_row(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 5)
+    rec = {}
+    monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory(rec))
+    scr._focus_cell(2, 1)                         # focus row 2
+    assert scr.process_key('KEY_F(9)') is None
+    assert scr.popup is not None
+    assert rec['commands'] == ('View', 'Delete')  # the row's row_popup_commands
+    assert scr.popup_y == 2                       # on-screen offset of the focused row
+
+
+def test_f9_focuses_top_visible_row_when_nothing_focused(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 5)
+    rec = {}
+    monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory(rec))
+    assert scr.active_field is None
+    scr.process_key('KEY_F(9)')
+    assert scr.active_field is not None           # focused the top visible row first
+    assert scr.active_field.screen_key[0] == scr.first_row
+    assert scr.popup is not None
+
+
+def test_f9_noop_with_no_rows(columns, monkeypatch):
+    scr = table_screen(FakeTable("Inv", columns, []))
+    scr.app = Mock(name="app")
+    scr.lines = 24
+    scr.cols = 80
+    scr.init()
+    scr.draw_body()
+    monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory({}))
+    scr.process_key('KEY_F(9)')
+    assert scr.popup is None

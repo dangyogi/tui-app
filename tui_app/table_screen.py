@@ -60,25 +60,9 @@ class table_screen(tui_base.screen):
         trace(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if bstate == tui_base.curses.BUTTON3_CLICKED:
             if y >= 2:
-                # row popup
-                if self.popup is not None:
-                    self.popup.delete()
-                self.popup_y = y - 2  # selected row#
-                row = self.rows[self.first_row + self.popup_y]
-                trace(f"screen.process_mouse creating popup for row {self.first_row + self.popup_y}, "
-                               f"{row=}, commands={row.row_popup_commands}")
-                self.popup = tui_base.popup_menu(row.human_key(), self, row.row_popup_commands,
-                                                 partial(row.execute, self), y + 1, 4)
+                self._open_row_popup(self.first_row + (y - 2), y + 1)   # row popup below the row
             else:
-                # table level popup at top of screen
-                if self.popup is not None:
-                    if self.popup_y is not None:   # this is a row popup, replace it
-                        self.popup.delete()
-                    else:
-                        return None                # this is a table level popup, just keep using it...
-                self.popup_y = None
-                self.popup = tui_base.popup_menu("Screen", self, self.screen_popup_commands,
-                                                 self.execute, 1, 4)
+                self._open_screen_popup()                              # table-level popup at the top
         elif bstate == tui_base.curses.BUTTON4_PRESSED:
             self.scroll_down(self.scroll_amount)
         elif bstate == tui_base.curses.BUTTON5_PRESSED:
@@ -97,6 +81,10 @@ class table_screen(tui_base.screen):
                 return self.execute('Back')
             case 'KEY_F(1)':                    # Help
                 self.show_help()
+            case 'KEY_F(10)':                   # screen menu (table names, Back, Exit/Abort)
+                self._open_screen_popup()
+            case 'KEY_F(9)':                    # row menu for the focused row
+                self._open_row_popup_for_focus()
             case 'KEY_DOWN':                    # move cell focus down one row (same column)
                 self._move_focus_row(1)
             case 'KEY_UP':                      # move cell focus up one row (same column)
@@ -118,6 +106,45 @@ class table_screen(tui_base.screen):
                     self.scroll_up(rows_left - (self.lines - 3))
             case _:
                 return key
+
+    def _open_row_popup(self, row_index, y):
+        r'''Open the per-row popup (row.row_popup_commands) for rows[row_index], drawn at screen line
+        y.  Shared by right-click (on a row) and F9.
+        '''
+        if self.popup is not None:
+            self.popup.delete()
+        self.popup_y = row_index - self.first_row
+        row = self.rows[row_index]
+        trace(f"table_screen._open_row_popup({row_index=}, {y=}): {row=}, {row.row_popup_commands=}")
+        self.popup = tui_base.popup_menu(row.human_key(), self, row.row_popup_commands,
+                                         partial(row.execute, self), y, 4)
+
+    def _open_screen_popup(self):
+        r'''Open the screen-level popup (table commands + Back/Exit/Abort).  Shared by right-click
+        (top rows) and F10.  If a screen popup is already open, leave it in place.
+        '''
+        if self.popup is not None and self.popup_y is None:
+            return                          # screen popup already open -- keep using it
+        if self.popup is not None:
+            self.popup.delete()             # replace an open row popup
+        self.popup_y = None
+        trace(f"table_screen._open_screen_popup(): {self.screen_popup_commands=}")
+        self.popup = tui_base.popup_menu("Screen", self, self.screen_popup_commands,
+                                         self.execute, 1, 4)
+
+    def _open_row_popup_for_focus(self):
+        r'''F9: open the row popup for the focused row.  Focus the top visible row first if nothing is
+        focused; no-op when there are no rows.
+        '''
+        if not self.rows:
+            return
+        if self.active_field is None:
+            self._move_focus_row(1)         # focus the top visible row
+        if self.active_field is None:
+            return
+        row_index = self.active_field.screen_key[0]
+        y = (row_index - self.first_row) + 2   # screen line of that row
+        self._open_row_popup(row_index, y + 1)
 
     def scroll_up(self, nlines):
         trace(f"scroll_up({nlines})")
@@ -247,6 +274,7 @@ class table_screen(tui_base.screen):
             "Tab / Shift-Tab .... next / prev editable cell",
             "PgUp / PgDn ........ scroll a page",
             "Home / End ......... scroll to top / bottom",
+            "F10 / F9 ........... screen menu / row menu",
             "Esc ................ back",
             "F1 ................. this help",
         ]
