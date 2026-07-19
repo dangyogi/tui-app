@@ -778,11 +778,25 @@
   1. F9/F10 keyboard menus -- DONE + Pi-verified 2026-07-19.  Factored _open_row_popup /
      _open_screen_popup out of process_mouse; F10 -> screen popup, F9 -> row popup for the focused row
      (focuses top visible row first if none).  [mouse right-press-drag-select refinement DEFERRED.]
-  2. table_screen F2 = open focused row in row_screen -- DONE 2026-07-19 (suite 244), NEEDS Pi verify.
+  2. table_screen F2 = open focused row in row_screen -- DONE + Pi-verified 2026-07-19.
      Runs the row's view_edit_command ('View/Edit', a table_screen class attr) and returns the
      row_screen; focuses top visible row first if none; no-op if not offered / no rows.
+     - FOLLOW-UP (found during F2 verify): row_screen had NO Esc handling, so Esc couldn't leave the
+       row form.  Added (partial task 5, pulled early): Esc deselects the active field then Backs, but
+       only when nothing changed; with unapplied changes it shows a message and stays (leave via
+       Cancel/Apply).  Buttons are still mouse-only + named Cancel/Validate/Submit until task 5.
+       NEEDS Pi verify (Esc returns to table on a clean row; Esc shows the message on a changed row).
   3. table_screen DEL = delete focused row with y/n confirm (+ auto-advance); INS = create row.
      (DEL only when NOT editing; during a cell edit DEL = delete char.)
+     - DONE + Pi-verified 2026-07-19 (suite 257).  Added tui_base.popup_confirm (Yes/No, default No,
+       y/n shortcuts [y=Yes/delete, n=No/cancel], Up/Down+Enter, Esc=dismiss).  DEL confirms then runs
+       the row's delete_command; focus auto-advances via draw_body restoring the same row index
+       (clamped to the new last row when the last row goes).  DEL is a silent no-op if the row doesn't
+       offer Delete (confirmed acceptable).  INS runs create_command only if the table advertises it
+       in screen_popup_commands.  ALSO fixed csv-app table.execute('Create') to RETURN the row_screen
+       (was falling through to None) -- committed in csv-app (c77773a).
+     - DEFERRED to task 4: "DEL only when NOT editing" -- table cell editing isn't wired yet, so DEL
+       always = delete row for now; gate it on edit-mode when task 4 lands.
   4. table_screen in-place cell EDITING: SPACE / printable char (NOT space-insert) / double-click
      starts edit; ENTER/UP/DOWN and TAB/BTAB commit + move; ESC aborts.  On commit: write cell ->
      row, recompute, redraw the row (calculated columns refresh).  This is the big one.
@@ -806,6 +820,11 @@
   ~1/3 screen, not needed yet).
 
 ### KNOWN BUGS (deferred) ###
+
+- Creating a row with a DUPLICATE key raises an uncaught exception (csv_app/table.py:158 --
+  `assert key not in self, "...Duplicate key..."`), crashing the app.  PRE-EXISTING (not from the
+  interaction work); surfaced 2026-07-19 testing INS (create).  Fix later: validate/catch the dup key
+  in the create path (row_screen Create / add_row) and show an error message instead of asserting.
 
 - Validation errors not displayed properly (PRE-EXISTING; spotted 2026-07-18 while verifying step 3 on the Pi;
   NOT introduced by the field refactor).  Repro: trigger a validation failure (e.g. an ask_question / a
