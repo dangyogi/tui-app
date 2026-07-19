@@ -138,6 +138,16 @@ def test_single_line_edits_left_aligned(app):
     assert f.pads == [0]           # editing: left-aligned (pad 0), cursor after the text is visible
 
 
+def test_empty_right_aligned_cursor_visible(app):
+    # an empty right-aligned cell must keep the position-0 cursor on-screen (pad 0), not pushed off
+    # the right edge -- so a focused/emptied right-aligned cell still shows its cursor
+    fs = field_shared("f", nlines=1, begin_x=0, ncols=10, app=app, alignment="right",
+                      left_placeholder="<", right_placeholder=">")
+    f = editable_single_line(0, "", fs, begin_y=0)
+    assert f.pads == [0]
+    assert list(f.gen_locations(0, 1)) == [(0, 0, 1)]   # cursor cell at column 0 is drawable
+
+
 def test_deactivate_clears_cursor(app):
     fs = field_shared("s", nlines=1, begin_x=0, ncols=10, app=app,
                       left_placeholder="<", right_placeholder=">")

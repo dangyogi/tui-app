@@ -463,7 +463,9 @@ class single_line:
             wtext = fs.left_placeholder + text[self.scroll + len(fs.left_placeholder):]
         else:
             wtext = text
-        if len(wtext) <= self.ncols:
+        if not wtext:
+            pad, line = 0, ' ' * self.ncols     # empty: keep the cursor visible at the left
+        elif len(wtext) <= self.ncols:
             pad, line = fs.align(wtext, alignment)
         else:
             # more than fits: truncate and mark the overflow with the right placeholder (left-packed)
