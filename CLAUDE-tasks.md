@@ -800,6 +800,18 @@
   4. table_screen in-place cell EDITING: SPACE / printable char (NOT space-insert) / double-click
      starts edit; ENTER/UP/DOWN and TAB/BTAB commit + move; ESC aborts.  On commit: write cell ->
      row, recompute, redraw the row (calculated columns refresh).  This is the big one.
+     - KEYBOARD DONE 2026-07-19 (suite 265), NEEDS Pi verify.  `editing` flag gates edit-mode; SPACE /
+       printable char start it (char inserts, replacing select-all; space doesn't); _edit_key routes
+       to the field (event_handled/return key), field consumes text + Left/Right; Enter/Down/Up/Tab/
+       BTab commit+move; Esc aborts.  Commit = row.set(col, text) + app.set_changed() + redraw that
+       row (calc cols refresh) + move (write-through, NOT Save).  Esc-abort re-reads from the row.
+       Enter (not editing) now moves down.  DEL gating falls out (editing routes to field first).
+     - KEYBOARD editing Pi-verified 2026-07-19 (left- AND right-aligned).  Right-aligned cells edit
+       LEFT-aligned / display right-aligned (single_line owns its no-wrap paint now; field.editing flag).
+       Fixed along the way: delete_selection cursor off-by-one; empty right-aligned cursor visibility.
+     - REMAINING: mouse double-click to start edit (deferred to a follow-up batch).
+     - NOTE: emptying a REQUIRED field crashes (uncaught ValueError) -- logged under KNOWN BUGS as part
+       of the validation-error-display cleanup.
   5. row_screen redesign per spec: remove Validate button; rename Submit->Apply (create keeps
      'Create'); Cancel + Apply both Back (Cancel discards, Apply writes to master/db); accept-field
      (ENTER/TAB/BTAB) always validates + recomputes calculated cols into self.row (copy) WITHOUT
@@ -825,6 +837,17 @@
   `assert key not in self, "...Duplicate key..."`), crashing the app.  PRE-EXISTING (not from the
   interaction work); surfaced 2026-07-19 testing INS (create).  Fix later: validate/catch the dup key
   in the create path (row_screen Create / add_row) and show an error message instead of asserting.
+
+- Emptying/deleting a REQUIRED field raises ValueError (Bruce's universal validation error) that is
+  UNCAUGHT -> no message (crash).  PRE-EXISTING; surfaced 2026-07-19 testing left-aligned cell editing.
+  Part of the broader validation-error-display cleanup: the app raises ValueError for all validation
+  problems, but the display paths don't catch/show it.  Fix together with:
+    * the existing "validation errors not displayed properly" bug (field.highlight missing / row_screen
+      error path),
+    * the dup-key assertion above,
+    * table cell _commit_edit and INS/Create: catch ValueError on write and show a message (keep
+      editing / stay) instead of crashing.
+  i.e. one cleanup pass makes validation failures show a message everywhere instead of raising.
 
 - Validation errors not displayed properly (PRE-EXISTING; spotted 2026-07-18 while verifying step 3 on the Pi;
   NOT introduced by the field refactor).  Repro: trigger a validation failure (e.g. an ask_question / a
