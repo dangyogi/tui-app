@@ -101,6 +101,32 @@ def test_process_key_no_grow_returns_none(app):
 
 # --- deactivate clears the cursor -----------------------------------------------------------------
 
+def test_delete_selection_puts_cursor_at_deletion_point(app):
+    # deleting a selection (e.g. DEL on a select-all) leaves the cursor AT the deletion point,
+    # not one past it -- else on an emptied field the cursor would be off the end and not drawn
+    app.screen = Mock(name="screen")
+    fs = field_shared("f", nlines=1, begin_x=0, ncols=10, app=app,
+                      left_placeholder="<", right_placeholder=">")
+    f = editable_single_line(0, "abc", fs, begin_y=0)
+    f.position = 0
+    f.selection_len = 3                          # whole value selected
+    f.delete_selection()                         # DEL the selection (insch='')
+    assert f.text == ""
+    assert f.position == 0                        # cursor at the deletion point
+
+
+def test_replace_selection_puts_cursor_after_char(app):
+    app.screen = Mock(name="screen")
+    fs = field_shared("f", nlines=1, begin_x=0, ncols=10, app=app,
+                      left_placeholder="<", right_placeholder=">")
+    f = editable_single_line(0, "abc", fs, begin_y=0)
+    f.position = 0
+    f.selection_len = 3
+    f.delete_selection("x")                      # type a char over the selection
+    assert f.text == "x"
+    assert f.position == 1                        # cursor after the inserted char
+
+
 def test_deactivate_clears_cursor(app):
     fs = field_shared("s", nlines=1, begin_x=0, ncols=10, app=app,
                       left_placeholder="<", right_placeholder=">")

@@ -621,7 +621,7 @@ class editable:
                     trace(f"{self.name}.process_key({key=}): {self.position=}, "
                           f"{self.selection_len=}, delete_selection")
                     self.delete_selection()
-                case 'KEY_DELETE' | 'KEY_DC' if not self.selection_len:
+                case 'KEY_DELETE' | 'KEY_DC' if not self.selection_len and self.position < len(self.text):
                     # delete char at self.position
                     trace(f"{self.name}.process_key({key=}): {self.position=}, "
                           f"no selection, delch at cursor")
@@ -692,10 +692,10 @@ class editable:
                 pos = self.position + self.selection_len
             trace(f"{self.name}.delete_selection(): {pos=}, {self.selection_len=}")
             self.delete(abs(self.selection_len), pos, insch)
-            if insch is not None:
-                self.set_position(pos + 1)
+            if insch:
+                self.set_position(pos + 1)    # a char replaced the selection -> cursor after it
             else:
-                self.set_position(pos)
+                self.set_position(pos)        # selection just deleted -> cursor at the deletion point
 
     def activate(self):
         r'''Select the whole value so the first typed char replaces it.'''
