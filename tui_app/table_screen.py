@@ -11,6 +11,8 @@ class table_screen(tui_base.screen):
     scroll_amount = 3
     error_attr = 0x01
     view_edit_command = 'View/Edit'    # row popup command F2 runs to open the focused row
+    delete_command = 'Delete'          # row command DEL runs (after confirm) to delete the focused row
+    create_command = 'Create'          # table command INS runs to create a new row
 
     def __init__(self, table, back=None, validate_fn=None, **select):
         r'''The validate_fn is passed the table and returns an error_message or None.
@@ -88,6 +90,10 @@ class table_screen(tui_base.screen):
                 self._open_row_popup_for_focus()
             case 'KEY_F(2)':                    # open the focused row in row_screen (View/Edit)
                 return self._view_edit_focused_row()
+            case 'KEY_DC' | 'KEY_DELETE':       # Delete the focused row (with y/n confirm)
+                self._confirm_delete_focused_row()
+            case 'KEY_IC':                      # Insert -> create a new row (if the table offers it)
+                return self._create_row()
             case 'KEY_DOWN':                    # move cell focus down one row (same column)
                 self._move_focus_row(1)
             case 'KEY_UP':                      # move cell focus up one row (same column)
@@ -165,6 +171,47 @@ class table_screen(tui_base.screen):
             trace(f"table_screen._view_edit_focused_row: {self.view_edit_command!r} not offered by row")
             return None
         return row.execute(self, self.view_edit_command)
+
+    def _confirm_delete_focused_row(self):
+        r'''DEL: pop a y/n confirm to delete the focused row.  Focus the top visible row first if
+        nothing is focused; no-op if the row doesn't offer delete_command or there are no rows.  The
+        actual delete happens in _do_delete (on Yes); focus auto-advances via draw_body restoring the
+        same row index (now the next row).
+        '''
+        if not self.rows:
+            return
+        if self.active_field is None:
+            self._move_focus_row(1)             # focus the top visible row
+        if self.active_field is None:
+            return
+        row_index = self.active_field.screen_key[0]
+        row = self.rows[row_index]
+        if self.delete_command not in row.row_popup_commands:
+            trace(f"table_screen._confirm_delete_focused_row: {self.delete_command!r} not offered")
+            return
+        if self.popup is not None:
+            self.popup.delete()
+        self.popup_y = row_index - self.first_row
+        y = (row_index - self.first_row) + 2    # screen line of the row
+        self.popup = tui_base.popup_confirm(f"Delete {row.human_key()}?", self,
+                                            partial(self._do_delete, row_index), y + 1, 4)
+
+    def _do_delete(self, row_index, choice):
+        r'''popup_confirm callback: on 'Yes' run the row's delete command (which usually returns
+        'REFRESH'); 'No' cancels.
+        '''
+        if choice != 'Yes':
+            return None
+        return self.rows[row_index].execute(self, self.delete_command)
+
+    def _create_row(self):
+        r'''INS: create a new row if the table offers create_command (advertised in
+        screen_popup_commands).  Returns the screen to switch to (normally a row_screen) or None.
+        '''
+        if self.create_command in self.table.screen_popup_commands:
+            return self.execute(self.create_command)
+        trace(f"table_screen._create_row: {self.create_command!r} not offered by table")
+        return None
 
     def scroll_up(self, nlines):
         trace(f"scroll_up({nlines})")
@@ -296,6 +343,7 @@ class table_screen(tui_base.screen):
             "Home / End ......... scroll to top / bottom",
             "F10 / F9 ........... screen menu / row menu",
             "F2 ................. open the focused row",
+            "Ins / Del .......... create row / delete focused row",
             "Esc ................ back",
             "F1 ................. this help",
         ]
@@ -360,8 +408,12 @@ class table_screen(tui_base.screen):
                           #tui_base.curses.color_pair(0xF0))       # not seeing a difference between high/low white...
                           #tui_base.curses.color_pair(0xFf))       # solid white...
         self.draw_rows(self.first_row)
-        if focus_key is not None and focus_key[0] in self.row_fields:
-            self._focus_cell(*focus_key)          # restore focus after a full redraw
+        if focus_key is not None and self.rows:
+            # restore focus after a full redraw; clamp the row so deleting the last row advances to
+            # the new last row (auto-advance falls out of keeping the same row index)
+            row = min(focus_key[0], len(self.rows) - 1)
+            if row in self.row_fields:
+                self._focus_cell(row, focus_key[1])
 
     def draw_rows(self, first_row=0, first_line=2, nlines=None):
         if nlines is None:

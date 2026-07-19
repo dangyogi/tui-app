@@ -189,12 +189,20 @@ def test_focus_preserved_on_full_redraw(columns):
     assert scr.active_field is scr.row_fields[0][1]   # same cell re-focused (new field object)
 
 
-def test_focus_dropped_on_redraw_when_row_gone(columns):
+def test_focus_clamped_on_redraw_when_rows_shrink(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(2, 1)
     scr.table._rows = scr.table._rows[:1]        # rows 1,2 removed before the redraw
     scr.draw_body()
-    assert scr.active_field is None              # focused row no longer on screen -> focus dropped
+    assert scr.active_field is scr.row_fields[0][1]   # clamped to the nearest remaining row
+
+
+def test_focus_dropped_on_redraw_when_no_rows(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(2, 1)
+    scr.table._rows = []                          # all rows removed
+    scr.draw_body()
+    assert scr.active_field is None              # nothing to focus
 
 
 def test_first_keypress_focuses_top_visible_first_editable(columns):
@@ -419,3 +427,75 @@ def test_f2_noop_with_no_rows(columns):
     scr.init()
     scr.draw_body()
     assert scr.process_key('KEY_F(2)') is None
+
+
+# --- DEL (delete with confirm + auto-advance) and INS (create) ------------------------------------
+
+def test_del_opens_confirm(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)
+    rec = {}
+    def fake_confirm(title, screen, cmd_fn, y, x, outside_space='below'):
+        rec.update(title=title, cmd_fn=cmd_fn)
+        return Mock(name="popup")
+    monkeypatch.setattr(tui_base, "popup_confirm", fake_confirm)
+    scr.process_key('KEY_DC')
+    assert scr.popup is not None
+    assert rec['title'] == "Delete item1?"       # human_key of the focused row
+
+
+def test_do_delete_yes_runs_delete(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    called = []
+    monkeypatch.setattr(scr.rows[1], "execute",
+                        lambda screen, cmd: called.append(cmd) or 'REFRESH')
+    assert scr._do_delete(1, 'Yes') == 'REFRESH'
+    assert called == ['Delete']
+
+
+def test_do_delete_no_is_noop(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    called = []
+    monkeypatch.setattr(scr.rows[1], "execute", lambda screen, cmd: called.append(cmd))
+    assert scr._do_delete(1, 'No') is None
+    assert called == []
+
+
+def test_del_noop_when_not_offered(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)
+    monkeypatch.setattr(type(scr.rows[1]), "row_popup_commands", ('View/Edit',))   # no Delete
+    scr.process_key('KEY_DC')
+    assert scr.popup is None
+
+
+def test_delete_advances_focus_to_next_row(columns):
+    scr = make_drawn_screen(columns, 4)          # rows 0..3
+    scr._focus_cell(1, 1)
+    del scr.table._rows[1]                        # delete row 1 -> rows shift up
+    scr.draw_body()                              # REFRESH rebuild
+    assert scr.active_field.screen_key == (1, 1)  # same index -> now the next row
+
+
+def test_delete_last_row_clamps_focus(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(2, 1)
+    del scr.table._rows[2]                        # delete the last row
+    scr.draw_body()
+    assert scr.active_field.screen_key == (1, 1)  # clamped to the new last row
+
+
+def test_ins_creates_row_when_offered(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    scr.table.screen_popup_commands = ('Create',)
+    sentinel = Mock(name="create_screen")
+    monkeypatch.setattr(scr, "execute", lambda cmd: sentinel if cmd == 'Create' else None)
+    assert scr.process_key('KEY_IC') is sentinel
+
+
+def test_ins_noop_when_not_offered(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    scr.table.screen_popup_commands = ()         # table doesn't offer Create
+    monkeypatch.setattr(scr, "execute",
+                        lambda cmd: pytest.fail("execute should not be called"))
+    assert scr.process_key('KEY_IC') is None

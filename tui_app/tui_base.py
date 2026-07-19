@@ -480,3 +480,21 @@ class popup_menu(popup):
         self.selection = index
         self.subwin.chgat(self.selection + 1, 2, self.width - 4, curses.A_REVERSE)
         self.subwin.noutrefresh()
+
+
+class popup_confirm(popup_menu):
+    r'''A Yes/No confirmation popup.  Enter/Space runs the highlighted choice (default No); 'y'/'Y'
+    answer Yes and 'n'/'N' answer No directly; Esc dismisses (== No).  cmd_fn is called with the
+    chosen command string ('Yes' or 'No').
+    '''
+    def __init__(self, name, screen, cmd_fn, begin_y, begin_x, outside_space='below'):
+        super().__init__(name, screen, ('No', 'Yes'), cmd_fn, begin_y, begin_x, outside_space)
+
+    def process_key(self, key):
+        if key in ('y', 'Y'):
+            self.select(1)                 # Yes
+            return self.execute()
+        if key in ('n', 'N'):
+            self.select(0)                 # No
+            return self.execute()
+        return super().process_key(key)
