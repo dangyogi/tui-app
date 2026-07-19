@@ -24,11 +24,10 @@ Concrete cells = one BEHAVIOR + one LAYOUT + the base, e.g.:
 
 Screens never name a concrete class -- they configure a field_shared (a factory) and ask it for fields.
 
-MIGRATION NOTE (step 2, 2026-07-18): the single/multi LAYOUT mixins are still empty; the layout/index
-math (paint, gen_locations, get_lineno, get_col, to_index) and wrap() currently live on `field` /
-field_shared and are shared by both, so single_line and multi_line behave identically for now.  They
-diverge in step 3 (single-line scroll) and step 4 (multi-line grow), at which point wrap() moves onto
-multi_line.
+LAYOUT split: single_line has its OWN paint (no-wrap: char-scroll + column/edit alignment + [<>]
+placeholders).  multi_line uses the base field.paint, which calls field_shared.wrap (grows, always
+left-aligned in practice).  The index math (gen_locations, get_lineno, get_col, to_index) stays shared
+on `field` and reads self.starts / self.pads / self.scroll, which both paints populate consistently.
 '''
 
 from .tui_base import curses, bstate_str, trace
@@ -170,21 +169,24 @@ class field_shared:
             index += 1
         return index
 
-    def align(self, line):
+    def align(self, line, alignment=None):
         r'''Pad `line` out to ncols.  Returns (pad, padded_line), where pad is the left x-offset of
         the text within the padded line: 0 for left alignment (padding added on the right), and
-        ncols-len(line) for right alignment (padding added on the left).
+        ncols-len(line) for right alignment (padding added on the left).  `alignment` defaults to the
+        column's; callers pass 'left' to force left alignment (e.g. a right-aligned cell while editing).
         '''
+        if alignment is None:
+            alignment = self.alignment
         pad = self.ncols - len(line)
         if pad <= 0:
             return 0, line
-        match self.alignment:
+        match alignment:
             case "left":
                 return 0, line + ' ' * pad
             case "right":
                 return pad, ' ' * pad + line
             case _:
-                raise ValueError(f'field_shared.align: illegal {self.alignment=!r}, '
+                raise ValueError(f'field_shared.align: illegal {alignment=!r}, '
                                  f'expected "left" or "right"')
 
     def blank_lines(self, nlines):
@@ -223,6 +225,7 @@ class field:
     mixin + a LAYOUT mixin + this base (see the module docstring).
     '''
     changed = False
+    editing = False    # set by the screen while this cell is being typed into (single_line: left-align)
 
     def __init__(self, screen_key, text, field_shared, begin_y, paint=True, attr_pair=None,
                  attr=0, callback=None):
@@ -429,15 +432,14 @@ class field:
 
 
 class single_line:
-    r'''LAYOUT mixin: single-line cell with horizontal (character) scroll.
+    r'''LAYOUT mixin: single-line cell with its own (no-wrap) paint + horizontal (character) scroll.
 
     self.scroll is a character offset into the text.  paint() recomputes it from the cursor
-    (self.position) so the cursor stays visible; the [<]/[>] placeholders (from field_shared) mark
-    scrolled-off text.  Read-only single-line cells have no cursor, so they never scroll (scroll 0).
-
-    NOTE: this still reuses field.paint / gen_locations / to_index (which already understand a scroll
-    offset + placeholders); only the driving of self.scroll is added here.  A full no-wrap rewrite of
-    the single-line layout can follow if needed, but the shared machinery renders one line correctly.
+    (self.position) so the cursor stays visible, then renders the one line directly (no wrap): the
+    [<]/[>] placeholders (from field_shared) mark scrolled-off / overflowing text.  It aligns with the
+    column's alignment normally, but LEFT while editing so a right-aligned cell's cursor (which would
+    otherwise sit past the right edge) stays visible -- see field.editing.  Read-only single-line
+    cells have no cursor, so they never scroll (scroll 0).  wrap() is only for multi_line now.
     '''
     X_single = 0.6   # keep the cursor ~60% of the way across the field when it scrolls
 
@@ -454,7 +456,24 @@ class single_line:
 
     def paint(self):
         self.scroll = self._compute_scroll()
-        super().paint()
+        fs = self.field_shared
+        alignment = 'left' if self.editing else fs.alignment   # edit left, display column-aligned
+        text = self.text.rstrip()
+        if self.scroll:
+            wtext = fs.left_placeholder + text[self.scroll + len(fs.left_placeholder):]
+        else:
+            wtext = text
+        if len(wtext) <= self.ncols:
+            pad, line = fs.align(wtext, alignment)
+        else:
+            # more than fits: truncate and mark the overflow with the right placeholder (left-packed)
+            line = wtext[: self.ncols - len(fs.right_placeholder)] + fs.right_placeholder
+            pad = 0
+        self.starts = [self.scroll]
+        self.pads = [pad]
+        self.app.stdscr.addstr(self.begin_y, self.begin_x, line,
+                               curses.color_pair(self.attr_pair) + self.attr)
+        self.set_attrs()
 
     def show_cursor(self):
         if self._compute_scroll() != self.scroll:

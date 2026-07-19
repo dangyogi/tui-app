@@ -127,6 +127,17 @@ def test_replace_selection_puts_cursor_after_char(app):
     assert f.position == 1                        # cursor after the inserted char
 
 
+def test_single_line_edits_left_aligned(app):
+    # a right-aligned cell displays right-aligned but edits LEFT-aligned so the cursor stays visible
+    fs = field_shared("f", nlines=1, begin_x=0, ncols=10, app=app, alignment="right",
+                      left_placeholder="<", right_placeholder=">")
+    f = editable_single_line(0, "42", fs, begin_y=0)
+    assert f.pads == [8]           # display: "42" right-aligned in 10 cols -> pad 8
+    f.editing = True
+    f.paint()
+    assert f.pads == [0]           # editing: left-aligned (pad 0), cursor after the text is visible
+
+
 def test_deactivate_clears_cursor(app):
     fs = field_shared("s", nlines=1, begin_x=0, ncols=10, app=app,
                       left_placeholder="<", right_placeholder=">")

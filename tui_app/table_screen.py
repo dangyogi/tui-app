@@ -84,10 +84,10 @@ class table_screen(tui_base.screen):
             return self._edit_key(key)
         if self._can_edit_focused():
             if key == ' ':                      # Space starts editing (does not insert)
-                self.editing = True
+                self._start_cell_edit()
                 return None
             if len(key) == 1 and tui_base.curses.ascii.isprint(key):
-                self.editing = True             # a printable char starts editing and inserts
+                self._start_cell_edit()         # a printable char starts editing and inserts
                 return self._edit_key(key)
         match key:
             case '\x1B':                        # Esc -> Back
@@ -227,6 +227,14 @@ class table_screen(tui_base.screen):
         r'''Is there a focused, editable cell (so a keystroke can start/continue an in-place edit)?'''
         return self.active_field is not None and self.active_field.can_edit
 
+    def _start_cell_edit(self):
+        r'''Enter edit mode on the focused cell: the field renders left-aligned while editing (so a
+        right-aligned cell's cursor stays visible), then a printable char inserts (via _edit_key).
+        '''
+        self.editing = True
+        self.active_field.editing = True
+        self.active_field.paint()               # re-render left-aligned
+
     def _edit_key(self, key):
         r'''Route a key to the cell being edited.  The field consumes text edits (insert/delete,
         Left/Right within the text); keys it returns unhandled drive commit / abort / navigation.
@@ -257,12 +265,15 @@ class table_screen(tui_base.screen):
         field = self.active_field
         row, col = field.screen_key
         self.editing = False
+        field.editing = False
         if field.changed:
             self.rows[row].set(self.columns[col].name, field.text)
             self.app.set_changed()
             line = (row - self.first_row) + 2
             self.draw_rows(row, line, 1)         # recreate this row's fields (calc cols refresh)
             self._focus_cell(row, col)           # re-focus the rebuilt cell (so the move reads it)
+        else:
+            field.paint()                        # re-render column-aligned (was left while editing)
 
     def _abort_edit(self):
         r'''Discard the in-progress edit: re-read the cell's value from the row (the source of truth,
@@ -271,11 +282,12 @@ class table_screen(tui_base.screen):
         field = self.active_field
         row, col = field.screen_key
         self.editing = False
+        field.editing = False
         field.text = self.rows[row].get(self.columns[col].name)
         field.changed = False
         field.position = 0
         field.selection_len = len(field.text)    # back to the focused select-all look
-        field.paint()
+        field.paint()                            # re-render column-aligned
 
     def scroll_up(self, nlines):
         trace(f"scroll_up({nlines})")
