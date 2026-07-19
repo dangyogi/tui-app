@@ -768,6 +768,42 @@
     the base holds all the factory machinery.  The two hierarchies are NOT coupled.
 - No open items remain blocking; step 1 of the migration plan can start.
 
+### interaction spec implementation (2026-07-19) ###
+
+- Authoritative spec = `tui_app/USER_INTERACTION` (Bruce's keyboard+mouse table + the RESOLVED
+  appendix from the 2026-07-19 review).  This section is the WORK CHECKLIST derived from it.  Keep the
+  per-screen help text (F1) in sync with the spec as each piece lands.
+
+- Ordered tasks (each = small batch, tests folded in, verify on the Pi):
+  1. F9/F10 keyboard menus (STARTED 2026-07-19).  Factor the two popup builders out of
+     table_screen.process_mouse (_open_row_popup / _open_screen_popup); F10 -> screen popup, F9 -> row
+     popup for the focused row (focus the top visible row first if nothing is focused).  Mouse path
+     calls the same helpers.  Update show_help.  [mouse right-press-drag-select refinement DEFERRED.]
+  2. table_screen F2 = open focused row in row_screen (View/Edit); same as the row-menu's View/Edit.
+  3. table_screen DEL = delete focused row with y/n confirm (+ auto-advance); INS = create row.
+     (DEL only when NOT editing; during a cell edit DEL = delete char.)
+  4. table_screen in-place cell EDITING: SPACE / printable char (NOT space-insert) / double-click
+     starts edit; ENTER/UP/DOWN and TAB/BTAB commit + move; ESC aborts.  On commit: write cell ->
+     row, recompute, redraw the row (calculated columns refresh).  This is the big one.
+  5. row_screen redesign per spec: remove Validate button; rename Submit->Apply (create keeps
+     'Create'); Cancel + Apply both Back (Cancel discards, Apply writes to master/db); accept-field
+     (ENTER/TAB/BTAB) always validates + recomputes calculated cols into self.row (copy) WITHOUT
+     writing master; ESC only Backs when unchanged (else no-op, no message).  Buttons in the Tab
+     sequence.  Careful with `changed` / attrs_changed bookkeeping across per-field accepts.
+  6. field ESC abort-reset (NEEDS DESIGN FIRST, then implement): snapshot text on activate; ESC
+     restores the snapshot (only undoes the current edit session).  DESIGN QUESTION: after abort the
+     `changed` flag must reflect text-vs-ORIGINAL-construction-value, not just "was edited" -- likely
+     capture the original value at construction and compute changed, OR store both original + session
+     snapshot.  Resolve before coding (Bruce flagged this as needing thought).
+  7. app exit/abort keys + popup_message callback (the double-key confirm); revisit AFTER F10 (may be
+     unnecessary if the F10 menu's Exit/Abort suffices).  Remove 'q' quit from screen.run when done.
+  8. Cross-cutting: ESC precedence chain (popup -> field abort -> Back) applied uniformly;
+     popup_message dismiss on ESC/ENTER/SPACE/click (ignore other keys).
+
+- DEFERRED refinements (not blocking): popup mouse right-press-drag-select (open under mouse);
+  menu_screen Left/Right between columns (UP/DOWN wrap already works); row_screen scroll (widest table
+  ~1/3 screen, not needed yet).
+
 ### KNOWN BUGS (deferred) ###
 
 - Validation errors not displayed properly (PRE-EXISTING; spotted 2026-07-18 while verifying step 3 on the Pi;
