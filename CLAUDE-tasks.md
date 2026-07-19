@@ -809,9 +809,20 @@
      - KEYBOARD editing Pi-verified 2026-07-19 (left- AND right-aligned).  Right-aligned cells edit
        LEFT-aligned / display right-aligned (single_line owns its no-wrap paint now; field.editing flag).
        Fixed along the way: delete_selection cursor off-by-one; empty right-aligned cursor visibility.
-     - REMAINING: mouse double-click to start edit (deferred to a follow-up batch).
+     - MOUSE for cell editing moved to task 4M below (do all table_screen mouse together).
      - NOTE: emptying a REQUIRED field crashes (uncaught ValueError) -- logged under KNOWN BUGS as part
        of the validation-error-display cleanup.
+  4M. table_screen MOUSE to match USER_INTERACTION (currently process_mouse only does right-click
+     popups + wheel scroll; BUTTON1 is unhandled).  Add:
+       - LEFT CLICK on a cell -> focus that cell (select); on a read-only table, focus the row.
+       - LEFT DOUBLE-CLICK on an editable cell -> start edit AND position the cursor at the click
+         (route to the field, whose process_mouse already does click-position / drag-select / dbl-word
+         / triple-all).
+       - while editing, route BUTTON1 clicks/drags to the focused cell's field for cursor/selection.
+       - (right-click popups + wheel already done; the right-press-drag-select popup refinement stays
+         DEFERRED.)
+     Hit-testing: map y -> row (first_row + y-2), then find the cell whose field.enclose(y,x) is true
+     (row_fields[row]); reuse the existing field.process_mouse.  Do this after task 5 (or whenever).
   5. row_screen redesign per spec: remove Validate button; rename Submit->Apply (create keeps
      'Create'); Cancel + Apply both Back (Cancel discards, Apply writes to master/db); accept-field
      (ENTER/TAB/BTAB) always validates + recomputes calculated cols into self.row (copy) WITHOUT
