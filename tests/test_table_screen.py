@@ -67,6 +67,9 @@ class FakeRow:
     def get(self, name):
         return str(self._values[name])
 
+    def set(self, name, value):
+        self._values[name] = value
+
     def human_key(self):
         return self.get("item")
 
@@ -129,6 +132,7 @@ def make_drawn_screen(columns, n_rows, lines=6):
     r'''A table_screen drawn once with n_rows rows; lines=6 -> 4 visible row lines (2..5).'''
     scr = table_screen(FakeTable("Inv", columns, make_rows(n_rows)))
     scr.app = Mock(name="app")
+    scr.app.stdscr.inch.return_value = 0         # reverse_attr (read-only focus) reads inch as an int
     scr.lines = lines
     scr.cols = 80
     scr.init()
@@ -499,3 +503,77 @@ def test_ins_noop_when_not_offered(columns, monkeypatch):
     monkeypatch.setattr(scr, "execute",
                         lambda cmd: pytest.fail("execute should not be called"))
     assert scr.process_key('KEY_IC') is None
+
+
+# --- in-place cell editing -----------------------------------------------------------------------
+
+def test_printable_char_starts_edit_and_inserts(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)                        # num_pkgs (editable), value "1", select-all
+    scr.process_key('7')
+    assert scr.editing
+    assert scr.active_field.text == "7"          # replaced the selected value
+
+
+def test_space_starts_edit_without_insert(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)
+    scr.process_key(' ')
+    assert scr.editing
+    assert scr.active_field.text == "1"          # space did not insert
+
+
+def test_printable_on_readonly_cell_does_not_edit(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(0, 0)                        # item (read-only)
+    assert scr.process_key('x') == 'x'           # bubbles up, unhandled
+    assert not scr.editing
+
+
+def test_enter_moves_down_when_not_editing(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(0, 1)
+    scr.process_key('\n')
+    assert not scr.editing
+    assert scr.active_field.screen_key == (1, 1)
+
+
+def test_cell_edit_commit_writes_row_and_advances(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)
+    scr.process_key('7')                         # edit -> "7"
+    scr.process_key('\n')                        # commit + move down
+    assert not scr.editing
+    assert scr.rows[1].get("num_pkgs") == "7"    # written through to the row
+    scr.app.set_changed.assert_called()
+    assert scr.active_field.screen_key == (2, 1)  # advanced to the next row
+
+
+def test_cell_edit_tab_commits_and_moves_column(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)
+    scr.process_key('9')
+    scr.process_key('\t')                        # commit + next editable col (3)
+    assert scr.rows[1].get("num_pkgs") == "9"
+    assert scr.active_field.screen_key == (1, 3)
+
+
+def test_cell_edit_abort_restores_row_value(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)
+    orig = scr.rows[1].get("num_pkgs")
+    scr.process_key('7')
+    assert scr.active_field.text == "7"
+    scr.process_key('\x1B')                      # Esc -> abort
+    assert not scr.editing
+    assert scr.active_field.text == orig          # restored
+    assert scr.rows[1].get("num_pkgs") == orig    # row untouched
+
+
+def test_del_while_editing_does_not_delete_row(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)
+    scr.process_key('7')                         # editing
+    scr.process_key('KEY_DC')                    # DEL routes to the field, not delete-row
+    assert scr.editing
+    assert scr.popup is None                     # no delete-row confirm opened

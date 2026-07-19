@@ -13,6 +13,7 @@ class table_screen(tui_base.screen):
     view_edit_command = 'View/Edit'    # row popup command F2 runs to open the focused row
     delete_command = 'Delete'          # row command DEL runs (after confirm) to delete the focused row
     create_command = 'Create'          # table command INS runs to create a new row
+    editing = False                    # True while the focused cell is being typed into
 
     def __init__(self, table, back=None, validate_fn=None, **select):
         r'''The validate_fn is passed the table and returns an error_message or None.
@@ -79,6 +80,15 @@ class table_screen(tui_base.screen):
             if tui_base.event_handled(key):
                 return key
         trace(f"table_screen.process_key({key=})")
+        if self.editing:
+            return self._edit_key(key)
+        if self._can_edit_focused():
+            if key == ' ':                      # Space starts editing (does not insert)
+                self.editing = True
+                return None
+            if len(key) == 1 and tui_base.curses.ascii.isprint(key):
+                self.editing = True             # a printable char starts editing and inserts
+                return self._edit_key(key)
         match key:
             case '\x1B':                        # Esc -> Back
                 return self.execute('Back')
@@ -94,7 +104,7 @@ class table_screen(tui_base.screen):
                 self._confirm_delete_focused_row()
             case 'KEY_IC':                      # Insert -> create a new row (if the table offers it)
                 return self._create_row()
-            case 'KEY_DOWN':                    # move cell focus down one row (same column)
+            case 'KEY_DOWN' | 'KEY_ENTER' | '\n':   # move cell focus down (Enter advances too)
                 self._move_focus_row(1)
             case 'KEY_UP':                      # move cell focus up one row (same column)
                 self._move_focus_row(-1)
@@ -212,6 +222,60 @@ class table_screen(tui_base.screen):
             return self.execute(self.create_command)
         trace(f"table_screen._create_row: {self.create_command!r} not offered by table")
         return None
+
+    def _can_edit_focused(self):
+        r'''Is there a focused, editable cell (so a keystroke can start/continue an in-place edit)?'''
+        return self.active_field is not None and self.active_field.can_edit
+
+    def _edit_key(self, key):
+        r'''Route a key to the cell being edited.  The field consumes text edits (insert/delete,
+        Left/Right within the text); keys it returns unhandled drive commit / abort / navigation.
+        '''
+        result = self.active_field.process_key(key)
+        if tui_base.event_handled(result):
+            return result                       # field handled it (None) or returned a sentinel
+        match result:
+            case '\x1B':                        # Esc -> abort (discard, keep the cell focused)
+                self._abort_edit()
+            case 'KEY_ENTER' | '\n' | 'KEY_DOWN':
+                self._commit_edit(); self._move_focus_row(1)
+            case 'KEY_UP':
+                self._commit_edit(); self._move_focus_row(-1)
+            case '\t':
+                self._commit_edit(); self._move_focus_col(1)
+            case 'KEY_BTAB':
+                self._commit_edit(); self._move_focus_col(-1)
+            case _:
+                return key                      # not handled during edit -> bubble up
+        return None
+
+    def _commit_edit(self):
+        r'''Write the edited cell through to the row (marking the app changed) and redraw that row so
+        calculated columns refresh.  Leaves edit mode.  Write-through does NOT Save -- that stays a
+        separate app command.
+        '''
+        field = self.active_field
+        row, col = field.screen_key
+        self.editing = False
+        if field.changed:
+            self.rows[row].set(self.columns[col].name, field.text)
+            self.app.set_changed()
+            line = (row - self.first_row) + 2
+            self.draw_rows(row, line, 1)         # recreate this row's fields (calc cols refresh)
+            self._focus_cell(row, col)           # re-focus the rebuilt cell (so the move reads it)
+
+    def _abort_edit(self):
+        r'''Discard the in-progress edit: re-read the cell's value from the row (the source of truth,
+        since commits write through) and repaint, leaving the cell focused (not editing).
+        '''
+        field = self.active_field
+        row, col = field.screen_key
+        self.editing = False
+        field.text = self.rows[row].get(self.columns[col].name)
+        field.changed = False
+        field.position = 0
+        field.selection_len = len(field.text)    # back to the focused select-all look
+        field.paint()
 
     def scroll_up(self, nlines):
         trace(f"scroll_up({nlines})")
@@ -371,6 +435,7 @@ class table_screen(tui_base.screen):
         column_names = []
         self.row_fields = {}   # {abs_row_index -> [one field per column]}, (re)built by draw_rows
         self.active_field = None   # fields are recreated below; focus is restored from focus_key
+        self.editing = False       # a full redraw leaves edit mode
         self.field_shareds = []
         begin_x = 0
         for column in self.columns:
