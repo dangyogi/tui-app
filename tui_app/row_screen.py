@@ -19,6 +19,18 @@ class row_screen(tui_base.screen):
 
     button_pair = 0x05         # black on purple: a normal command button
     button_focus_pair = 0x0a   # the button currently holding Tab focus
+    help_lines = [             # F1 help (base screen.show_help renders it)
+        "type ............... edit the focused field",
+        "Left / Right ....... move the cursor in the field",
+        "Up / Down .......... move the cursor across wrapped lines",
+        "Tab / Shift-Tab .... next / previous field or button",
+        "Enter .............. accept the field / run the focused button",
+        "Space .............. run the focused button",
+        "click .............. focus a field / run a button",
+        "Esc ................ discard the field edit",
+        "F8 ................. back (blocked while changes are unapplied)",
+        "F1 ................. this help",
+    ]
 
     master_row = None
     table = None
@@ -73,6 +85,9 @@ class row_screen(tui_base.screen):
         trace(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
 
     def process_mouse(self, mouse_event):
+        result = super().process_mouse(mouse_event)     # popup routing first
+        if tui_base.event_handled(result):
+            return result
         _, x, y, _, bstate = mouse_event
         trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if self.error_field is not None:
@@ -96,15 +111,20 @@ class row_screen(tui_base.screen):
         return mouse_event
 
     def process_key(self, key):
-       #if self.popup is not None:
-       #    key = self.popup.process_key(key)
-       #    if tui_base.event_handled(key):
-       #        return key
         trace(f"row_screen.process_key({key=}) {self.active_field=}")
         if self.error_field is not None:
             self.error_field.highlight()
             self.error_field = None
         self.clear_message()
+        if key == 'KEY_F(8)':                   # specific override of Back: guard unapplied changes
+            if self.attrs_changed or any(field.changed for field in self.fields):
+                self.message("Unapplied changes: use Cancel or Apply to leave",
+                             tui_base.curses.color_pair(self.error_msg_attr))
+                return None                     # don't leave with unapplied changes
+            return self.back
+        key = super().process_key(key)          # popup routing (Esc closes it) + F1 help
+        if tui_base.event_handled(key):
+            return key
         if self.active_field is not None:
             key = self.active_field.process_key(key)
             if key == 'REFRESH':
@@ -123,19 +143,13 @@ class row_screen(tui_base.screen):
                 self._draw_button(self.focused_button, focused=False)
                 self.focused_button = None
             return None
-        if key == 'KEY_F(8)':                   # Back
-            if self.attrs_changed or any(field.changed for field in self.fields):
-                self.message("Unapplied changes: use Cancel or Apply to leave",
-                             tui_base.curses.color_pair(self.error_msg_attr))
-                return None                     # don't leave with unapplied changes
-            return self.back
         if key in ('\t', 'KEY_ENTER', '\n'):    # forward through the Tab sequence
             self._tab(1)
             return None
         if key == 'KEY_BTAB':                   # backward through the Tab sequence
             self._tab(-1)
             return None
-        return super().process_key(key)         # F1 help + any other common keys (F8 handled above)
+        return key                              # not handled here -> bubble up
 
     def _tab(self, direction):
         r'''Move Tab-focus forward (+1) or backward (-1) through the sequence editable-fields-then-

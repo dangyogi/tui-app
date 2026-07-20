@@ -92,6 +92,19 @@ def test_esc_drops_button_focus_and_stays():
     assert s.focused_button is None
 
 
+def test_active_popup_gets_keys_first():
+    # base screen.process_key routes to the popup before field/button handling (Esc closes it)
+    f = fake_field(0, True)
+    s = make_screen([f])
+    s.active_field = f
+    popup = Mock(name="popup")
+    popup.process_key.return_value = None            # popup consumed the key (closed itself)
+    s.popup = popup
+    assert s.process_key('\x1B') is None
+    popup.process_key.assert_called_once_with('\x1B')
+    f.process_key.assert_not_called()                # popup won -> field never saw the Esc
+
+
 def test_key_routed_to_active_field():
     f = fake_field(0, True, handled=True)
     s = make_screen([f])

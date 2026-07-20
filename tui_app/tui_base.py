@@ -247,13 +247,24 @@ class screen:
             self.popup = None
 
     def process_mouse(self, mouse_event):
+        r'''Route to the active popup first (a click/drag it doesn't consume falls through as the
+        event, unchanged).  A subclass calls `super().process_mouse(...)` at the TOP of its own, then
+        handles anything the popup left over.  No popup -> a harmless pass-through.
+        '''
+        if self.popup is not None:
+            mouse_event = self.popup.process_mouse(mouse_event)
         return mouse_event
 
     def process_key(self, key):
-        r'''Handle the keys common to every screen.  A subclass handles its own keys first, then
-        delegates anything left over here via `return super().process_key(key)`.  A screen that needs
-        special Back behavior (e.g. row_screen's unapplied-changes guard) handles F8 itself.
+        r'''Route to the active popup first (Esc/Del there closes it), then handle the keys common to
+        every screen.  A subclass handles its own specific keys, calls `super().process_key(key)` near
+        the TOP (so a popup wins over field/cell handling), then handles the rest.  A screen with
+        special Back behavior (e.g. row_screen's unapplied-changes guard) handles F8 before delegating.
         '''
+        if self.popup is not None:
+            key = self.popup.process_key(key)
+            if event_handled(key):
+                return key
         match key:
             case 'KEY_F(8)':          # Back (validates via execute; None on a top screen -> no-op)
                 return self.execute('Back')

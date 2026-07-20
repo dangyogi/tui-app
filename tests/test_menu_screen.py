@@ -67,7 +67,18 @@ def test_f8_on_top_menu_is_noop():
     assert m.process_key('KEY_F(8)') is None       # nowhere to go -> harmless no-op (keeps looping)
 
 
-def test_f1_help_noop_without_help_lines():
-    m = make_menu()                                # menu_screen defines no help_lines (base -> ())
-    assert m.process_key('KEY_F(1)') is None
-    assert m.popup is None                         # empty help_lines -> no popup
+def test_f1_shows_help(monkeypatch):
+    m = make_menu()
+    called = []
+    monkeypatch.setattr(m, "show_help", lambda: called.append(True))
+    assert m.process_key('KEY_F(1)') is None       # F1 -> base screen.show_help
+    assert called and m.help_lines                 # menu_screen defines help_lines
+
+
+def test_active_popup_gets_keys_first():
+    m = make_menu()
+    popup = Mock(name="popup")
+    popup.process_key.return_value = None           # popup consumed the key (e.g. Esc closes help)
+    m.popup = popup
+    assert m.process_key('\x1B') is None
+    popup.process_key.assert_called_once_with('\x1B')

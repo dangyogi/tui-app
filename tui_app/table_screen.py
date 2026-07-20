@@ -69,10 +69,9 @@ class table_screen(tui_base.screen):
         return True
 
     def process_mouse(self, mouse_event):
-        if self.popup is not None:
-            mouse_event = self.popup.process_mouse(mouse_event)
-            if tui_base.event_handled(mouse_event):
-                return mouse_event
+        mouse_event = super().process_mouse(mouse_event)   # popup routing first
+        if tui_base.event_handled(mouse_event):
+            return mouse_event
         _, x, y, _, bstate = mouse_event
         trace(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if bstate == tui_base.curses.BUTTON3_CLICKED:
@@ -88,10 +87,9 @@ class table_screen(tui_base.screen):
             return mouse_event
 
     def process_key(self, key):
-        if self.popup is not None:
-            key = self.popup.process_key(key)
-            if tui_base.event_handled(key):
-                return key
+        key = super().process_key(key)          # popup routing + common keys (F8 Back, F1 help)
+        if tui_base.event_handled(key):
+            return key
         trace(f"table_screen.process_key({key=})")
         match key:                              # screen navigation (F1/F8 handled by base screen)
             case 'KEY_F(2)':                    # open the focused row in row_screen (View/Edit)
@@ -130,7 +128,7 @@ class table_screen(tui_base.screen):
             key = self._cell_key(key)
             if tui_base.event_handled(key):
                 return key
-        return super().process_key(key)         # F1/F8 + any other common keys
+        return key                              # not handled here -> bubble up
 
     def _open_row_popup(self, row_index, y):
         r'''Open the per-row popup (row.row_popup_commands) for rows[row_index], drawn at screen line

@@ -39,6 +39,14 @@ class menu_screen(tui_base.screen):
     cant_run_pair = 0x10  # red text
     may_run_pair  = 0x30  # yellow text
     must_run_pair = 0x20  # green text
+    help_lines = [        # F1 help (base screen.show_help renders it)
+        "Up / Down .......... select the previous / next action",
+        "Enter / Space ...... run the selected action",
+        "click / dbl-click .. select / run an action",
+        "r .................. reset all actions",
+        "F8 ................. back",
+        "F1 ................. this help",
+    ]
 
     def __init__(self, actions, title="Menu", back=None):
         super().__init__(title, back)
@@ -68,6 +76,9 @@ class menu_screen(tui_base.screen):
             a.app_is(self.app)
 
     def process_mouse(self, mouse_event):
+        result = super().process_mouse(mouse_event)   # popup routing first
+        if tui_base.event_handled(result):
+            return result
         _, x, y, _, bstate = mouse_event
         trace(f"menu_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
 
@@ -96,6 +107,9 @@ class menu_screen(tui_base.screen):
 
     def process_key(self, key):
         trace(f"menu_screen.process_key({key=}) {self.active_field=}")
+        key = super().process_key(key)          # popup routing + common keys (F8 Back, F1 help)
+        if tui_base.event_handled(key):
+            return key
         if self.answer is not None:
             ans = self.answer.process_key(key)
             if tui_base.event_handled(ans):
@@ -130,7 +144,7 @@ class menu_screen(tui_base.screen):
             self.clear_message()
             action.reset()
             return 'REFRESH'
-        return super().process_key(key)         # F1/F8 (Back) + any other common keys
+        return key                              # not handled here -> bubble up
 
     def execute(self, action):
         if action == 'Back':                    # F8 from the base screen (execute is otherwise
