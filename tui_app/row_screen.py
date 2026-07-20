@@ -176,13 +176,14 @@ class row_screen(tui_base.screen):
         '''
         if not field.changed:
             return True
-        try:
-            field.validate()
-        except ValueError as exc:
-            field.highlight(tui_base.curses.color_pair(self.error_attr))
-            self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
-            self.error_field = field
-            return False
+        if field.text.strip():                   # only type-check a non-empty value; an empty
+            try:                                  # (blanked) field is the required-check's concern,
+                field.validate()                 # not the column converter's (e.g. float('') raises)
+            except ValueError as exc:
+                field.highlight(tui_base.curses.color_pair(self.error_attr))
+                self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
+                self.error_field = field
+                return False
         self.row.set(field.name, field.text)     # into the copy, NOT the master (that's Apply)
         self.attrs_changed.add(field.name)
         field.changed = False

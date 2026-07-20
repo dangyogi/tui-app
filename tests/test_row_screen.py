@@ -261,3 +261,15 @@ def test_apply_copies_to_master():
     s.fields[0].changed = True
     assert s.execute('Apply') is back
     assert master.get("a") == "7"             # accepted edit written through to the master row
+
+
+def test_accept_blanked_field_skips_type_check():
+    cols = [FakeColumn("qty", can_edit=True)]
+    s = make_row_screen(cols, {"qty": "5"})
+    s.draw_body()
+    f = s.fields[0]
+    f.field_shared.validate_fn = float          # float("") would raise -- must not be called
+    f.text = ""                                 # blanked (optional field)
+    f.changed = True
+    assert s.accept_field(f) is True            # empty -> skip type-check, accept
+    assert s.row.get("qty") == ""               # written as blank (required-check handles required)
