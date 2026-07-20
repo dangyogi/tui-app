@@ -782,15 +782,12 @@
   the task-4 editing flag / SPACE-start-edit and moves delete-row off DEL.
   - Progress: row_screen F8/Esc/abort_field + Apply/Cancel rename DONE (2026-07-20, suite 269).
   - REMAINING batches (each verify on Pi):
-    a. table_screen REWRITE to the finalized model: global F-keys (F1/F2/F5/F8/F9/F10/INS) first; a
-       focused cell routes ALL keys through the field (new _cell_key: field-first; bubbled TAB/BTAB ->
-       col-nav, UP/DOWN -> row-nav, Enter -> commit+down, Esc -> abort-cell); LEFT/RIGHT stay in the
-       field (no col-nav); DEL -> delete-char; F5 -> delete-row (was KEY_DC); remove editing flag /
-       _start_cell_edit / _can_edit_focused; `field.editing` becomes a FOCUS flag set in _focus_cell
-       (editable cell left-aligns for the cursor, deselect -> re-render display-aligned via paint);
-       _commit_edit writes + _recompute_row (repaint read-only/calc cells in place, no rebuild);
-       _abort_edit resets + stays focused.  Update show_help.  Big test churn (rewrite the editing/
-       DEL/SPACE/arrow tests).
+    a. table_screen REWRITE -- DONE + Pi-verified 2026-07-20 (suite 272).  Focused cell always live;
+       LEFT/RIGHT cursor, UP/DOWN row-nav, TAB/BTAB cell-nav (all WRAP at the table ends, staying on
+       the visible page -- normal moves still auto-scroll); DEL=delete-char, F5=delete-row, F8=Back,
+       Esc=abort-cell.  editing flag retired -> per-field FOCUS flag (_focus_cell left-aligns an
+       editable focused cell, restores display alignment on defocus); moving focus commits the old cell
+       (_commit_edit + _recompute_row, in place, no rebuild); _abort_edit resets + stays focused.
     b. row_screen task 5b: accept-field (Enter/Tab/BTab) validate + write to self.row + recompute +
        move; invalid -> stay + message; add field.highlight(attr=None); attrs_changed accumulates;
        Apply = accept active + final checks + copy_to_master + Back.
