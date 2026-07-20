@@ -273,3 +273,21 @@ def test_accept_blanked_field_skips_type_check():
     f.changed = True
     assert s.accept_field(f) is True            # empty -> skip type-check, accept
     assert s.row.get("qty") == ""               # written as blank (required-check handles required)
+
+
+def test_apply_after_blanking_optional_field():
+    # blanking an optional field then Apply must not choke (copy_to_master uses the csv string)
+    cols = [FakeColumn("a", can_edit=True)]
+    master = FakeRow(cols, {"a": "5"})
+    s = row_screen.for_update(master)
+    s.app = Mock(name="app")
+    s.cols = 25
+    s.lines = 40
+    s.init()
+    s.draw_body()
+    s.back = object()
+    s.activate_field(s.fields[0])
+    s.fields[0].text = ""                    # blank it
+    s.fields[0].changed = True
+    assert s.execute('Apply') is s.back
+    assert master.get("a") == ""             # blank written through (via get() -> "")

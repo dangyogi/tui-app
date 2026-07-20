@@ -230,20 +230,24 @@ class row_screen(tui_base.screen):
             field.paint()
 
     def copy_to_master(self):
-        r'''Copies the values changed on the screen from self.row to self.master_row.
-
-        Doesn't return anything.
+        r'''Copies the changed values from self.row (the copy) to self.master_row.  set() takes a csv
+        STRING, so use get() (the csv value) -- not the parsed attribute, which would re-run to_python
+        (e.g. float(None) on a blanked field).
         '''
         for attr in self.attrs_changed:
-            self.master_row.set(attr, getattr(self.row, attr))
+            self.master_row.set(attr, self.row.get(attr))
         self.app.set_changed()
 
     def insert(self):
-        r'''Inserts the values changed on the screen from self.row.
-
-        Doesn't return anything.
+        r'''Inserts a new row from the changed values.  table.insert takes PYTHON values and forbids
+        None (omit instead), so drop attrs left blank (None) -- e.g. an untouched optional field.
         '''
-        self.table.insert(**{attr: getattr(self.row, attr) for attr in self.attrs_changed})
+        attrs = {}
+        for attr in self.attrs_changed:
+            value = getattr(self.row, attr)
+            if value is not None:
+                attrs[attr] = value
+        self.table.insert(**attrs)
         self.app.set_changed()
 
     def draw_body(self):
