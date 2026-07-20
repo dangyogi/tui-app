@@ -873,8 +873,15 @@
      `changed` flag must reflect text-vs-ORIGINAL-construction-value, not just "was edited" -- likely
      capture the original value at construction and compute changed, OR store both original + session
      snapshot.  Resolve before coding (Bruce flagged this as needing thought).
-  7. app exit/abort keys + popup_message callback (the double-key confirm); revisit AFTER F10 (may be
-     unnecessary if the F10 menu's Exit/Abort suffices).  Remove 'q' quit from screen.run when done.
+  7. app exit/abort keys -- DONE + Pi-verified 2026-07-20 (suite 298).  F12 = exit, handled on the
+     BASE screen (works everywhere): clean -> APP_EXIT; unsaved changes -> popup_confirm "Discard
+     changes and exit?" (Yes -> APP_ABORT discard+quit, No -> stay), mirroring the F10 Exit/Abort.
+     Removed the 'q' quit from screen.run; added F12 to every help_lines.  (Chose popup_confirm over
+     the original double-key/popup_message-callback idea now that popup_confirm exists.)
+     - Unsaved check is overridable: base has_unsaved() = app.changed; row_screen extends it to also
+       count UNAPPLIED field edits (attrs_changed / field.changed), so F12 confirms instead of
+       silently dropping an in-progress row edit (2026-07-20).  The F8 guard reuses the same
+       _unapplied_changes() helper.
   8. Cross-cutting: ESC precedence chain (popup -> field abort -> Back) applied uniformly;
      popup_message dismiss on ESC/ENTER/SPACE/click (ignore other keys).
      - MOSTLY DONE 2026-07-20 (task 5f): popup routing centralized in base screen.process_key/

@@ -111,6 +111,15 @@ class row_screen(tui_base.screen):
                 return field.process_mouse(mouse_event)
         return mouse_event
 
+    def _unapplied_changes(self):
+        r'''True when this form has field edits not yet written to the master row / db.'''
+        return bool(self.attrs_changed or any(field.changed for field in self.fields))
+
+    def has_unsaved(self):
+        r'''F12 exit also confirms when this form has unapplied field edits (the base only knows the
+        app-level changed flag), so exiting can't silently drop them.'''
+        return super().has_unsaved() or self._unapplied_changes()
+
     def process_key(self, key):
         trace(f"row_screen.process_key({key=}) {self.active_field=}")
         if self.error_field is not None:
@@ -118,7 +127,7 @@ class row_screen(tui_base.screen):
             self.error_field = None
         self.clear_message()
         if key == 'KEY_F(8)':                   # specific override of Back: guard unapplied changes
-            if self.attrs_changed or any(field.changed for field in self.fields):
+            if self._unapplied_changes():
                 self.message("Unapplied changes: use Cancel or Apply to leave",
                              tui_base.curses.color_pair(self.error_msg_attr))
                 return None                     # don't leave with unapplied changes

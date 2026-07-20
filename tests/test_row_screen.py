@@ -361,3 +361,35 @@ def test_mouse_click_field_accepts_previous():
     assert s.row.get("a") == "9"             # field a accepted when the click switched fields
     assert "a" in s.attrs_changed
     assert s.active_field is fb
+
+
+def test_has_unsaved_includes_unapplied_field_edits():
+    f = fake_field(0, True)
+    s = make_screen([f])
+    s.app.changed = False
+    assert s.has_unsaved() is False              # app clean + no field edits
+    f.changed = True
+    assert s.has_unsaved() is True               # an unapplied field edit counts as unsaved
+
+
+def test_f12_confirms_with_unapplied_field_edits(monkeypatch):
+    f = fake_field(0, True)
+    f.changed = True
+    s = make_screen([f])
+    s.app.changed = False                        # app itself is clean; only the field is edited
+    s.cols = 80
+    s.lines = 24
+    rec = {}
+    def fake_confirm(title, screen, cmd_fn, y, x, outside_space='below'):
+        rec.update(title=title, cmd_fn=cmd_fn)
+        return Mock(name="popup")
+    monkeypatch.setattr(tui_base, "popup_confirm", fake_confirm)
+    assert s.process_key('KEY_F(12)') is None    # F12 -> confirm, don't silently discard the edit
+    assert s.popup is not None
+    assert rec['cmd_fn']('Yes') == 'APP_ABORT'
+
+
+def test_f12_exits_clean_row():
+    s = make_screen([fake_field(0, True)])
+    s.app.changed = False
+    assert s.process_key('KEY_F(12)') == 'APP_EXIT'   # nothing unapplied -> exit cleanly

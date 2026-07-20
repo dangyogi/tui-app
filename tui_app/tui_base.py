@@ -279,12 +279,18 @@ class screen:
         if self.help_lines:
             self.popup = popup_message(self.help_title, self, list(self.help_lines))
 
+    def has_unsaved(self):
+        r'''True when exiting now would lose work, so exit_app confirms first.  Base = the app's
+        changed flag; a screen with its own uncommitted state (e.g. row_screen's unapplied field
+        edits) extends this.'''
+        return self.app.changed
+
     def exit_app(self):
         r'''F12: exit the app.  With nothing unsaved, exit cleanly (APP_EXIT).  With unsaved changes,
         pop a Yes/No confirm -- Yes aborts (APP_ABORT, discarding the changes), No stays.  The
         popup_confirm callback returns the leaving sentinel, which propagates back out to screen.run.
         '''
-        if not self.app.changed:
+        if not self.has_unsaved():
             return 'APP_EXIT'
         title = "Discard changes and exit?"
         width = 4 + len(title)
