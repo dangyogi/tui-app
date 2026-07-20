@@ -895,21 +895,17 @@
 
 ### KNOWN BUGS (deferred) ###
 
-- Creating a row with a DUPLICATE key raises an uncaught exception (csv_app/table.py:158 --
-  `assert key not in self, "...Duplicate key..."`), crashing the app.  PRE-EXISTING (not from the
-  interaction work); surfaced 2026-07-19 testing INS (create).  Fix later: validate/catch the dup key
-  in the create path (row_screen Create / add_row) and show an error message instead of asserting.
-
-- Emptying/deleting a REQUIRED field raises ValueError (Bruce's universal validation error) that is
-  UNCAUGHT -> no message (crash).  PRE-EXISTING; surfaced 2026-07-19 testing left-aligned cell editing.
-  Part of the broader validation-error-display cleanup: the app raises ValueError for all validation
-  problems, but the display paths don't catch/show it.  Fix together with:
-    * the existing "validation errors not displayed properly" bug (field.highlight missing / row_screen
-      error path),
-    * the dup-key assertion above,
-    * table cell _commit_edit and INS/Create: catch ValueError on write and show a message (keep
-      editing / stay) instead of crashing.
-  i.e. one cleanup pass makes validation failures show a message everywhere instead of raising.
+- FIXED 2026-07-20 (+ Pi-verified): create-path crashes -- all now show a message + stay on the form.
+  csv-app now raises ValueError (not assert/KeyError) for duplicate key (table.add_row), bad FK
+  (row.check_foreign_keys raise_exc=True), and missing required (row.check_required); row_screen
+  catches ValueError around validate() (check_required) and insert() (dup/FK).  Also row_screen
+  _get_value() tolerates a calculated field that can't compute yet (e.g. Items[item] FK lookup on a
+  not-yet-valid key raising KeyError) -> blanks instead of crashing recompute()/draw_body().
+  STILL OPEN (part of the same cleanup, not yet done):
+    * table cell _commit_edit: catch ValueError on write-through and show a message (keep editing)
+      instead of crashing -- e.g. emptying a REQUIRED cell, or a per-cell converter raising.
+    * the "validation errors not displayed properly" item below (row_screen field.highlight was added
+      with 5b, but the menu_screen ask_question / popup_message error path may still be off).
 
 - Validation errors not displayed properly (PRE-EXISTING; spotted 2026-07-18 while verifying step 3 on the Pi;
   NOT introduced by the field refactor).  Repro: trigger a validation failure (e.g. an ask_question / a
