@@ -181,6 +181,8 @@ class screen:
     width = None
     popup = None
     active_field = None   # the currently active field object (see activate_field), or None
+    help_title = "Navigation"
+    help_lines = ()       # subclasses set their key/mouse help; empty -> F1 does nothing
 
     def __init__(self, title, back=None):
         r'''self.app is set by run.
@@ -248,7 +250,22 @@ class screen:
         return mouse_event
 
     def process_key(self, key):
+        r'''Handle the keys common to every screen.  A subclass handles its own keys first, then
+        delegates anything left over here via `return super().process_key(key)`.  A screen that needs
+        special Back behavior (e.g. row_screen's unapplied-changes guard) handles F8 itself.
+        '''
+        match key:
+            case 'KEY_F(8)':          # Back (validates via execute; None on a top screen -> no-op)
+                return self.execute('Back')
+            case 'KEY_F(1)':          # Help
+                self.show_help()
+                return None
         return key
+
+    def show_help(self):
+        r'''F1 help: pop up the screen's help_lines (a class variable).  No help_lines -> nothing.'''
+        if self.help_lines:
+            self.popup = popup_message(self.help_title, self, list(self.help_lines))
 
     def validate(self):
         return True

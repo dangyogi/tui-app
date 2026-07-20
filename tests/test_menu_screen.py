@@ -53,3 +53,21 @@ def test_key_up_wraps_to_last_runnable():
     m.process_key('KEY_DOWN')                      # -> index 0
     assert m.process_key('KEY_UP') is None         # up from 0 wraps to last runnable (index 2)
     assert m.active_field is m.fields[2]
+
+
+def test_f8_backs():
+    back = object()
+    m = make_menu()
+    m.back = back
+    assert m.process_key('KEY_F(8)') is back       # F8 = Back, via the base screen + execute('Back')
+
+
+def test_f8_on_top_menu_is_noop():
+    m = make_menu()                                # back defaults to None (top menu)
+    assert m.process_key('KEY_F(8)') is None       # nowhere to go -> harmless no-op (keeps looping)
+
+
+def test_f1_help_noop_without_help_lines():
+    m = make_menu()                                # menu_screen defines no help_lines (base -> ())
+    assert m.process_key('KEY_F(1)') is None
+    assert m.popup is None                         # empty help_lines -> no popup

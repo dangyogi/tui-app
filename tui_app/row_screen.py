@@ -135,7 +135,7 @@ class row_screen(tui_base.screen):
         if key == 'KEY_BTAB':                   # backward through the Tab sequence
             self._tab(-1)
             return None
-        return key
+        return super().process_key(key)         # F1 help + any other common keys (F8 handled above)
 
     def _tab(self, direction):
         r'''Move Tab-focus forward (+1) or backward (-1) through the sequence editable-fields-then-

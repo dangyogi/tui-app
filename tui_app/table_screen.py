@@ -13,6 +13,20 @@ class table_screen(tui_base.screen):
     view_edit_command = 'View/Edit'    # row popup command F2 runs to open the focused row
     delete_command = 'Delete'          # row command F5 runs (after confirm) to delete the focused row
     create_command = 'Create'          # table command INS runs to create a new row
+    help_lines = [                     # F1 help (base screen.show_help renders it); grows over time
+        "Up / Down .......... move to the previous / next row",
+        "Left / Right ....... move the cursor in the cell",
+        "Tab / Shift-Tab .... next / prev editable cell",
+        "type ............... edit the cell (Enter or Tab commits)",
+        "Esc ................ discard the cell edit",
+        "PgUp / PgDn ........ scroll a page",
+        "Home / End ......... scroll to top / bottom",
+        "Ins / F5 ........... create row / delete focused row",
+        "F2 ................. open the focused row",
+        "F10 / F9 ........... screen menu / row menu",
+        "F8 ................. back",
+        "F1 ................. this help",
+    ]
 
     def __init__(self, table, back=None, validate_fn=None, **select):
         r'''The validate_fn is passed the table and returns an error_message or None.
@@ -79,15 +93,11 @@ class table_screen(tui_base.screen):
             if tui_base.event_handled(key):
                 return key
         trace(f"table_screen.process_key({key=})")
-        match key:                              # global keys + screen navigation (any focus state)
-            case 'KEY_F(1)':                    # Help
-                self.show_help(); return None
+        match key:                              # screen navigation (F1/F8 handled by base screen)
             case 'KEY_F(2)':                    # open the focused row in row_screen (View/Edit)
                 return self._view_edit_focused_row()
             case 'KEY_F(5)':                    # delete the focused row (with y/n confirm)
                 self._confirm_delete_focused_row(); return None
-            case 'KEY_F(8)':                    # Back
-                return self.execute('Back')
             case 'KEY_F(9)':                    # row menu for the focused row
                 self._open_row_popup_for_focus(); return None
             case 'KEY_F(10)':                   # screen menu (table names, Back, Exit/Abort)
@@ -117,8 +127,10 @@ class table_screen(tui_base.screen):
                 return None
         # Left/Right (cursor), typing, Delete, Esc act on the focused cell
         if self.active_field is not None:
-            return self._cell_key(key)
-        return key
+            key = self._cell_key(key)
+            if tui_base.event_handled(key):
+                return key
+        return super().process_key(key)         # F1/F8 + any other common keys
 
     def _open_row_popup(self, row_index, y):
         r'''Open the per-row popup (row.row_popup_commands) for rows[row_index], drawn at screen line
@@ -418,24 +430,6 @@ class table_screen(tui_base.screen):
         else:
             self._ensure_visible(row)
         self._focus_cell(row, self.editable_cols[ci])
-
-    def show_help(self):
-        r'''F1 help -- grows as more keys (and mouse) are added.'''
-        help_lines = [
-            "Up / Down .......... move to the previous / next row",
-            "Left / Right ....... move the cursor in the cell",
-            "Tab / Shift-Tab .... next / prev editable cell",
-            "type ............... edit the cell (Enter or Tab commits)",
-            "Esc ................ discard the cell edit",
-            "PgUp / PgDn ........ scroll a page",
-            "Home / End ......... scroll to top / bottom",
-            "Ins / F5 ........... create row / delete focused row",
-            "F2 ................. open the focused row",
-            "F10 / F9 ........... screen menu / row menu",
-            "F8 ................. back",
-            "F1 ................. this help",
-        ]
-        self.popup = tui_base.popup_message("Navigation", self, help_lines)
 
     def execute(self, command):
         trace(f"table_screen.execute({command=})")

@@ -130,9 +130,11 @@ class menu_screen(tui_base.screen):
             self.clear_message()
             action.reset()
             return 'REFRESH'
-        return key
+        return super().process_key(key)         # F1/F8 (Back) + any other common keys
 
     def execute(self, action):
+        if action == 'Back':                    # F8 from the base screen (execute is otherwise
+            return self.back                    # action-based, so it can't go through the command chain)
         trace(f"menu_screen.execute({action.name=})")
         ans = action.execute(self)
         trace(f"menu_screen.execute -> {ans}")
