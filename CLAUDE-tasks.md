@@ -771,8 +771,32 @@
 ### interaction spec implementation (2026-07-19) ###
 
 - Authoritative spec = `tui_app/USER_INTERACTION` (Bruce's keyboard+mouse table + the RESOLVED
-  appendix from the 2026-07-19 review).  This section is the WORK CHECKLIST derived from it.  Keep the
-  per-screen help text (F1) in sync with the spec as each piece lands.
+  appendix + the FINALIZED navigation model 2026-07-20).  This section is the WORK CHECKLIST derived
+  from it.  Keep the per-screen help text (F1) in sync with the spec as each piece lands.
+
+- NAV MODEL FINALIZED (2026-07-20) -- see USER_INTERACTION "FINALIZED navigation model".  Key points:
+  F8 = Back everywhere (Esc no longer Back; Esc = close popup / abort field, never leaves).  One rule:
+  ARROWS act within the field, TAB/BTAB move between fields.  table_screen (single-line cells) has NO
+  active/editing state -- a focused cell is always live: LEFT/RIGHT=cursor, UP/DOWN=row-nav,
+  TAB/BTAB=cell-nav, DEL=delete-char, F5=delete-row, Enter=commit+down, Esc=abort-cell.  This RETIRES
+  the task-4 editing flag / SPACE-start-edit and moves delete-row off DEL.
+  - Progress: row_screen F8/Esc/abort_field + Apply/Cancel rename DONE (2026-07-20, suite 269).
+  - REMAINING batches (each verify on Pi):
+    a. table_screen REWRITE to the finalized model: global F-keys (F1/F2/F5/F8/F9/F10/INS) first; a
+       focused cell routes ALL keys through the field (new _cell_key: field-first; bubbled TAB/BTAB ->
+       col-nav, UP/DOWN -> row-nav, Enter -> commit+down, Esc -> abort-cell); LEFT/RIGHT stay in the
+       field (no col-nav); DEL -> delete-char; F5 -> delete-row (was KEY_DC); remove editing flag /
+       _start_cell_edit / _can_edit_focused; `field.editing` becomes a FOCUS flag set in _focus_cell
+       (editable cell left-aligns for the cursor, deselect -> re-render display-aligned via paint);
+       _commit_edit writes + _recompute_row (repaint read-only/calc cells in place, no rebuild);
+       _abort_edit resets + stays focused.  Update show_help.  Big test churn (rewrite the editing/
+       DEL/SPACE/arrow tests).
+    b. row_screen task 5b: accept-field (Enter/Tab/BTab) validate + write to self.row + recompute +
+       move; invalid -> stay + message; add field.highlight(attr=None); attrs_changed accumulates;
+       Apply = accept active + final checks + copy_to_master + Back.
+    c. row_screen task 5c: Cancel/Apply buttons in the Tab order (focus + highlight + Enter/Space run).
+    d. menu_screen: F8 = Back.
+    e. field.highlight also fixes one validation-display KNOWN BUG (do with 5b).
 
 - Ordered tasks (each = small batch, tests folded in, verify on the Pi):
   1. F9/F10 keyboard menus -- DONE + Pi-verified 2026-07-19.  Factored _open_row_popup /
