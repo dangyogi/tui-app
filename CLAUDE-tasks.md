@@ -901,9 +901,11 @@
   catches ValueError around validate() (check_required) and insert() (dup/FK).  Also row_screen
   _get_value() tolerates a calculated field that can't compute yet (e.g. Items[item] FK lookup on a
   not-yet-valid key raising KeyError) -> blanks instead of crashing recompute()/draw_body().
+  FIXED 2026-07-20 (+ Pi-verified): table cell _commit_edit now validates (column.validate) and
+  catches ValueError from validation / row.set() -> pops an Error message, keeps the cell dirty, and
+  _focus_cell aborts the move (stay on the bad cell); _recompute_row tolerates a calc cell that can't
+  compute yet (blanks).  So editing a cell to a bad value shows a message instead of crashing.
   STILL OPEN (part of the same cleanup, not yet done):
-    * table cell _commit_edit: catch ValueError on write-through and show a message (keep editing)
-      instead of crashing -- e.g. emptying a REQUIRED cell, or a per-cell converter raising.
     * the "validation errors not displayed properly" item below (row_screen field.highlight was added
       with 5b, but the menu_screen ask_question / popup_message error path may still be off).
 
