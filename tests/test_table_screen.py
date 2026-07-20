@@ -248,41 +248,41 @@ def test_up_first_keypress_focuses_bottom_visible(columns):
     assert scr.active_field.screen_key == (3, 1)  # bottom visible row, first editable col
 
 
-def test_left_first_keypress_focuses_rightmost_col(columns):
+def test_btab_first_keypress_focuses_rightmost_col(columns):
     scr = make_drawn_screen(columns, 5)
     assert scr.active_field is None
-    scr.process_key('KEY_LEFT')
+    scr.process_key('KEY_BTAB')
     assert scr.active_field.screen_key == (0, 3)  # top visible row, right-most editable col
 
 
-def test_right_first_keypress_focuses_leftmost_col(columns):
+def test_tab_first_keypress_focuses_leftmost_col(columns):
     scr = make_drawn_screen(columns, 5)
-    scr.process_key('KEY_RIGHT')
+    scr.process_key('\t')
     assert scr.active_field.screen_key == (0, 1)  # top visible row, first editable col
 
 
-def test_right_moves_to_next_editable_col_then_wraps(columns):
+def test_tab_moves_to_next_editable_col_then_wraps(columns):
     scr = make_drawn_screen(columns, 5)          # editable_cols == [1, 3]
     scr.process_key('KEY_DOWN')                  # focus (0, 1)
-    scr.process_key('KEY_RIGHT')                 # -> (0, 3)
+    scr.process_key('\t')                        # -> (0, 3)
     assert scr.active_field.screen_key == (0, 3)
-    scr.process_key('KEY_RIGHT')                 # last editable col -> wrap to next row's first
+    scr.process_key('\t')                        # last editable col -> wrap to next row's first
     assert scr.active_field.screen_key == (1, 1)
 
 
-def test_left_wraps_to_previous_row(columns):
+def test_btab_wraps_to_previous_row(columns):
     scr = make_drawn_screen(columns, 5)
     scr.process_key('KEY_DOWN')                  # (0, 1)
-    scr.process_key('KEY_RIGHT')                 # (0, 3)
-    scr.process_key('KEY_RIGHT')                 # (1, 1)
-    scr.process_key('KEY_LEFT')                  # first editable col -> wrap to prev row's last
+    scr.process_key('\t')                        # (0, 3)
+    scr.process_key('\t')                        # (1, 1)
+    scr.process_key('KEY_BTAB')                  # first editable col -> wrap to prev row's last
     assert scr.active_field.screen_key == (0, 3)
 
 
-def test_left_at_very_first_cell_is_noop(columns):
+def test_btab_at_very_first_cell_is_noop(columns):
     scr = make_drawn_screen(columns, 5)
     scr.process_key('KEY_DOWN')                  # (0, 1) -- the very first editable cell
-    scr.process_key('KEY_LEFT')                  # nowhere before it -> no move
+    scr.process_key('KEY_BTAB')                  # nowhere before it -> no move
     assert scr.active_field.screen_key == (0, 1)
 
 
@@ -295,15 +295,11 @@ def test_tab_and_shift_tab_alias_right_and_left(columns):
     assert scr.active_field.screen_key == (0, 1)
 
 
-def test_esc_returns_back(columns):
+def test_f8_returns_back(columns):
+    scr = make_drawn_screen(columns, 3)
     back = object()
-    scr = table_screen(FakeTable("Inv", columns, make_rows(3)), back=back)
-    scr.app = Mock(name="app")
-    scr.lines = 24
-    scr.cols = 80
-    scr.init()
-    scr.draw_body()
-    assert scr.process_key('\x1B') is back       # Esc -> Back returns the back screen
+    scr.back = back
+    assert scr.process_key('KEY_F(8)') is back   # F8 -> Back returns the back screen
 
 
 def test_f1_calls_show_help(columns, monkeypatch):
@@ -443,7 +439,7 @@ def test_del_opens_confirm(columns, monkeypatch):
         rec.update(title=title, cmd_fn=cmd_fn)
         return Mock(name="popup")
     monkeypatch.setattr(tui_base, "popup_confirm", fake_confirm)
-    scr.process_key('KEY_DC')
+    scr.process_key('KEY_F(5)')
     assert scr.popup is not None
     assert rec['title'] == "Delete item1?"       # human_key of the focused row
 
@@ -469,7 +465,7 @@ def test_del_noop_when_not_offered(columns, monkeypatch):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(1, 1)
     monkeypatch.setattr(type(scr.rows[1]), "row_popup_commands", ('View/Edit',))   # no Delete
-    scr.process_key('KEY_DC')
+    scr.process_key('KEY_F(5)')
     assert scr.popup is None
 
 
@@ -507,34 +503,36 @@ def test_ins_noop_when_not_offered(columns, monkeypatch):
 
 # --- in-place cell editing -----------------------------------------------------------------------
 
-def test_printable_char_starts_edit_and_inserts(columns):
+def test_printable_char_edits_focused_cell(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(1, 1)                        # num_pkgs (editable), value "1", select-all
     scr.process_key('7')
-    assert scr.editing
     assert scr.active_field.text == "7"          # replaced the selected value
 
 
-def test_space_starts_edit_without_insert(columns):
+def test_space_inserts_like_any_char(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(1, 1)
-    scr.process_key(' ')
-    assert scr.editing
-    assert scr.active_field.text == "1"          # space did not insert
+    scr.process_key(' ')                         # Space is a normal insert now (no special role)
+    assert scr.active_field.text == " "          # replaced the select-all
 
 
-def test_printable_on_readonly_cell_does_not_edit(columns):
+def test_printable_on_readonly_cell_bubbles(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(0, 0)                        # item (read-only)
-    assert scr.process_key('x') == 'x'           # bubbles up, unhandled
-    assert not scr.editing
+    assert scr.process_key('x') == 'x'           # nothing to edit -> bubbles up unhandled
 
 
-def test_enter_moves_down_when_not_editing(columns):
+def test_typing_with_no_focus_bubbles(columns):
+    scr = make_drawn_screen(columns, 3)
+    assert scr.active_field is None
+    assert scr.process_key('7') == '7'           # no auto-focus; the key just bubbles
+
+
+def test_enter_moves_down(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(0, 1)
     scr.process_key('\n')
-    assert not scr.editing
     assert scr.active_field.screen_key == (1, 1)
 
 
@@ -542,8 +540,7 @@ def test_cell_edit_commit_writes_row_and_advances(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(1, 1)
     scr.process_key('7')                         # edit -> "7"
-    scr.process_key('\n')                        # commit + move down
-    assert not scr.editing
+    scr.process_key('\n')                        # Enter: down a row -> commits (1,1) first
     assert scr.rows[1].get("num_pkgs") == "7"    # written through to the row
     scr.app.set_changed.assert_called()
     assert scr.active_field.screen_key == (2, 1)  # advanced to the next row
@@ -553,7 +550,7 @@ def test_cell_edit_tab_commits_and_moves_column(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(1, 1)
     scr.process_key('9')
-    scr.process_key('\t')                        # commit + next editable col (3)
+    scr.process_key('\t')                        # Tab: next editable cell -> commits (1,1) first
     assert scr.rows[1].get("num_pkgs") == "9"
     assert scr.active_field.screen_key == (1, 3)
 
@@ -564,16 +561,15 @@ def test_cell_edit_abort_restores_row_value(columns):
     orig = scr.rows[1].get("num_pkgs")
     scr.process_key('7')
     assert scr.active_field.text == "7"
-    scr.process_key('\x1B')                      # Esc -> abort
-    assert not scr.editing
+    scr.process_key('\x1B')                      # Esc -> abort the cell edit (stay focused)
     assert scr.active_field.text == orig          # restored
+    assert scr.active_field.screen_key == (1, 1)  # still focused
     assert scr.rows[1].get("num_pkgs") == orig    # row untouched
 
 
-def test_del_while_editing_does_not_delete_row(columns):
+def test_del_does_not_delete_row(columns):
     scr = make_drawn_screen(columns, 3)
     scr._focus_cell(1, 1)
-    scr.process_key('7')                         # editing
-    scr.process_key('KEY_DC')                    # DEL routes to the field, not delete-row
-    assert scr.editing
-    assert scr.popup is None                     # no delete-row confirm opened
+    scr.process_key('7')                         # cell now "7"
+    scr.process_key('KEY_DC')                    # DEL routes to the field, never delete-row
+    assert scr.popup is None                     # no delete-row confirm (that's F5 now)
