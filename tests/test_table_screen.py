@@ -223,11 +223,12 @@ def test_arrow_down_moves_focus_same_column(columns):
     assert scr.active_field.screen_key == (1, 1)
 
 
-def test_arrow_up_clamps_at_top(columns):
-    scr = make_drawn_screen(columns, 5)
+def test_arrow_up_wraps_to_bottom_visible(columns):
+    scr = make_drawn_screen(columns, 5)          # visible rows 0..3
     scr.process_key('KEY_DOWN')                  # focus (0, 1)
-    scr.process_key('KEY_UP')                    # can't go above row 0
-    assert scr.active_field.screen_key == (0, 1)
+    scr.process_key('KEY_UP')                    # off the top -> wraps to the bottom visible row
+    assert scr.active_field.screen_key == (3, 1)
+    assert scr.first_row == 0                     # stayed on screen (no scroll)
 
 
 def test_arrow_down_autoscrolls_at_bottom(columns):
@@ -246,6 +247,21 @@ def test_up_first_keypress_focuses_bottom_visible(columns):
     assert scr.active_field is None
     scr.process_key('KEY_UP')
     assert scr.active_field.screen_key == (3, 1)  # bottom visible row, first editable col
+
+
+def test_arrow_down_wraps_to_top_visible(columns):
+    scr = make_drawn_screen(columns, 3)          # 3 rows, all visible
+    scr._focus_cell(2, 1)                        # last row
+    scr.process_key('KEY_DOWN')                  # off the bottom -> wraps to the top visible row
+    assert scr.active_field.screen_key == (0, 1)
+    assert scr.first_row == 0                     # stayed on screen
+
+
+def test_tab_wraps_from_last_cell_to_top(columns):
+    scr = make_drawn_screen(columns, 3)          # editable_cols [1, 3], all visible
+    scr._focus_cell(2, 3)                        # last row, last editable col
+    scr.process_key('\t')                        # off the bottom -> wraps to top visible first cell
+    assert scr.active_field.screen_key == (0, 1)
 
 
 def test_btab_first_keypress_focuses_rightmost_col(columns):
@@ -279,11 +295,12 @@ def test_btab_wraps_to_previous_row(columns):
     assert scr.active_field.screen_key == (0, 3)
 
 
-def test_btab_at_very_first_cell_is_noop(columns):
-    scr = make_drawn_screen(columns, 5)
+def test_btab_from_first_cell_wraps_to_bottom_visible(columns):
+    scr = make_drawn_screen(columns, 5)          # visible rows 0..3, editable_cols [1, 3]
     scr.process_key('KEY_DOWN')                  # (0, 1) -- the very first editable cell
-    scr.process_key('KEY_BTAB')                  # nowhere before it -> no move
-    assert scr.active_field.screen_key == (0, 1)
+    scr.process_key('KEY_BTAB')                  # off the top -> bottom visible row's last editable
+    assert scr.active_field.screen_key == (3, 3)
+    assert scr.first_row == 0                     # stayed on screen
 
 
 def test_tab_and_shift_tab_alias_right_and_left(columns):

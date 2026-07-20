@@ -363,37 +363,46 @@ class table_screen(tui_base.screen):
         elif row > self.first_row + visible - 1:
             self.scroll_up(row - (self.first_row + visible - 1))
 
+    def _bottom_visible_row(self):
+        r'''Absolute index of the bottom row currently on screen.'''
+        return min(self.first_row + (self.lines - 2) - 1, len(self.rows) - 1)
+
     def _move_focus_row(self, delta):
-        r'''Move cell focus up/down by delta rows, keeping the same column (auto-scroll to stay
-        visible).  With nothing focused yet, the first keypress focuses the top visible row.
+        r'''Move cell focus up/down by delta rows, keeping the same column.  A normal move auto-scrolls
+        to stay visible; moving off the top/bottom of the table WRAPS to the bottom/top visible row
+        (staying on screen -- no jump to the far end).  With nothing focused yet, the first keypress
+        focuses the top (Down) or bottom (Up) visible row.
         '''
         if not self.rows:
             return
+        n = len(self.rows)
         if self.active_field is None:
-            # first keypress: Down starts at the top visible row, Up at the bottom visible row
-            if delta > 0:
-                row = self.first_row
-            else:
-                row = min(self.first_row + (self.lines - 2) - 1, len(self.rows) - 1)
+            row = self.first_row if delta > 0 else self._bottom_visible_row()
             col = self._default_col()
         else:
             row, col = self.active_field.screen_key
-            row = max(0, min(row + delta, len(self.rows) - 1))
-        self._ensure_visible(row)
+            target = row + delta
+            if target < 0:
+                row = self._bottom_visible_row()    # wrapped off the top -> bottom visible row
+            elif target >= n:
+                row = self.first_row                # wrapped off the bottom -> top visible row
+            else:
+                row = target
+                self._ensure_visible(row)           # normal move: auto-scroll to keep it visible
         self._focus_cell(row, col)
 
     def _move_focus_col(self, delta):
-        r'''Move cell focus to the previous/next editable column (delta -1/+1), wrapping to the
-        adjacent row's last/first editable column at the ends.  No-op when there are no editable
-        columns.  With nothing focused yet, the first keypress focuses the top visible row's first
-        editable cell.
+        r'''Move cell focus to the previous/next editable cell (delta -1/+1), wrapping to the adjacent
+        row's last/first editable column at the column ends, and off the top/bottom of the table to
+        the bottom/top visible row (staying on screen).  No-op when there are no editable columns.
+        With nothing focused yet, the first keypress focuses the top visible row's first (Tab) or last
+        (Shift-Tab) editable cell.
         '''
         if not self.rows or not self.editable_cols:
             return
+        n = len(self.rows)
         if self.active_field is None:
-            # first keypress: Right starts at the first editable col, Left at the last
             col = self.editable_cols[0] if delta > 0 else self.editable_cols[-1]
-            self._ensure_visible(self.first_row)
             self._focus_cell(self.first_row, col)
             return
         row, col = self.active_field.screen_key
@@ -402,9 +411,12 @@ class table_screen(tui_base.screen):
             row, ci = row - 1, len(self.editable_cols) - 1     # wrap to previous row's last col
         elif ci >= len(self.editable_cols):
             row, ci = row + 1, 0                                # wrap to next row's first col
-        if not (0 <= row < len(self.rows)):
-            return                                             # at the very first/last cell: no move
-        self._ensure_visible(row)
+        if row < 0:
+            row = self._bottom_visible_row()                   # wrapped off the top -> bottom visible
+        elif row >= n:
+            row = self.first_row                               # wrapped off the bottom -> top visible
+        else:
+            self._ensure_visible(row)
         self._focus_cell(row, self.editable_cols[ci])
 
     def show_help(self):
