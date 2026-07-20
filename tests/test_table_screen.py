@@ -406,6 +406,27 @@ def test_f1_calls_show_help(columns, monkeypatch):
     assert called == [True]
 
 
+def test_f12_exits_when_clean(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr.app.changed = False
+    assert scr.process_key('KEY_F(12)') == 'APP_EXIT'    # nothing unsaved -> exit cleanly
+    assert scr.popup is None
+
+
+def test_f12_confirms_when_changed(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr.app.changed = True
+    assert scr.process_key('KEY_F(12)') is None          # unsaved changes -> confirm, stay for now
+    assert scr.popup is not None
+    assert scr.popup.cmd_fn('Yes') == 'APP_ABORT'        # Yes -> abort (discard + quit)
+    assert scr.popup.cmd_fn('No') is None                # No -> stay
+
+
+def test_q_no_longer_quits(columns):
+    scr = make_drawn_screen(columns, 3)
+    assert scr.process_key('q') == 'q'                    # 'q' is an ordinary key now, just bubbles
+
+
 def test_left_right_noop_in_read_only_table():
     cols = [FakeColumn("a", min_width=5), FakeColumn("b", min_width=5)]   # no editable columns
     rows = [FakeRow(a=f"a{i}", b=f"b{i}") for i in range(3)]

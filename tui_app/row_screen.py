@@ -29,6 +29,7 @@ class row_screen(tui_base.screen):
         "click .............. focus a field / run a button",
         "Esc ................ discard the field edit",
         "F8 ................. back (blocked while changes are unapplied)",
+        "F12 ................ exit the app",
         "F1 ................. this help",
     ]
 

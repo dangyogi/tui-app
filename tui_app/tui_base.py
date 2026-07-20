@@ -24,7 +24,7 @@ How input in processed:
       - an instance of screen, screen.run returns this to app.run to start that screen.
       - 'APP_EXIT', screen.run returns None to app.run to exit the app
       - 'APP_ABORT', screen.run calls sys.exit(1) to exit the app
-      - 'q' from screen.process_key, returns None to app.run to exit the app (this may go away in the future)
+        (F12 = exit: 'APP_EXIT' when clean, else a Yes/No confirm whose Yes returns 'APP_ABORT')
       - None, screen.run assumes the event was handled and just loops to read more input
     - table_screen:
       - process_mouse
@@ -233,8 +233,7 @@ class screen:
                         return None
                     if key == 'APP_ABORT':
                         sys.exit(1)
-                    if key == 'q':
-                        return None  # quit
+                    # (no 'q' quit: exit is F12, or Exit/Abort from the F10 screen menu)
                 app.stdscr.refresh() # does not refresh subwin the first time its called, but gets it the
                                      # second time(??)
                                      # fixed by calling noutrefresh() on subwin
@@ -271,12 +270,32 @@ class screen:
             case 'KEY_F(1)':          # Help
                 self.show_help()
                 return None
+            case 'KEY_F(12)':         # Exit the app (confirm first if there are unsaved changes)
+                return self.exit_app()
         return key
 
     def show_help(self):
         r'''F1 help: pop up the screen's help_lines (a class variable).  No help_lines -> nothing.'''
         if self.help_lines:
             self.popup = popup_message(self.help_title, self, list(self.help_lines))
+
+    def exit_app(self):
+        r'''F12: exit the app.  With nothing unsaved, exit cleanly (APP_EXIT).  With unsaved changes,
+        pop a Yes/No confirm -- Yes aborts (APP_ABORT, discarding the changes), No stays.  The
+        popup_confirm callback returns the leaving sentinel, which propagates back out to screen.run.
+        '''
+        if not self.app.changed:
+            return 'APP_EXIT'
+        title = "Discard changes and exit?"
+        width = 4 + len(title)
+        begin_x = max(1, (self.cols - width) // 2)
+        begin_y = max(1, (self.lines - 4) // 2)
+        if self.popup is not None:
+            self.popup.delete()
+        self.popup = popup_confirm(title, self,
+                                   lambda choice: 'APP_ABORT' if choice == 'Yes' else None,
+                                   begin_y, begin_x, outside_space=None)
+        return None
 
     def validate(self):
         return True

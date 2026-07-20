@@ -25,6 +25,7 @@ class table_screen(tui_base.screen):
         "F2 ................. open the focused row",
         "F10 / F9 ........... screen menu / row menu",
         "F8 ................. back",
+        "F12 ................ exit the app",
         "F1 ................. this help",
     ]
 

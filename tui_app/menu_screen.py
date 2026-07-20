@@ -45,6 +45,7 @@ class menu_screen(tui_base.screen):
         "click / dbl-click .. select / run an action",
         "r .................. reset all actions",
         "F8 ................. back",
+        "F12 ................ exit the app",
         "F1 ................. this help",
     ]
 
