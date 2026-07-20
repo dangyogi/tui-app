@@ -17,6 +17,9 @@ class row_screen(tui_base.screen):
     error_msg_attr = 0x10
     error_field = None
 
+    button_pair = 0x05         # black on purple: a normal command button
+    button_focus_pair = 0x0a   # the button currently holding Tab focus
+
     master_row = None
     table = None
 
@@ -357,13 +360,11 @@ class row_screen(tui_base.screen):
             self._draw_button(i, focused=False)
 
     def _draw_button(self, i, focused):
-        r'''(Re)draw command button i, reversed when it currently holds Tab focus.'''
+        r'''(Re)draw command button i, in the focus background color when it holds Tab focus.'''
         command = self.row_screen_commands[i]
         x0, _ = self.command_buttons_x[i]
-        attr = tui_base.curses.color_pair(0x05)
-        if focused:
-            attr |= tui_base.curses.A_REVERSE
-        self.app.stdscr.addstr(self.button_y, x0, command, attr)
+        pair = self.button_focus_pair if focused else self.button_pair
+        self.app.stdscr.addstr(self.button_y, x0, command, tui_base.curses.color_pair(pair))
 
     def message(self, msg, attr):
         x = (self.cols - len(msg)) // 2  # center message
