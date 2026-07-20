@@ -788,12 +788,29 @@
        Esc=abort-cell.  editing flag retired -> per-field FOCUS flag (_focus_cell left-aligns an
        editable focused cell, restores display alignment on defocus); moving focus commits the old cell
        (_commit_edit + _recompute_row, in place, no rebuild); _abort_edit resets + stays focused.
-    b. row_screen task 5b: accept-field (Enter/Tab/BTab) validate + write to self.row + recompute +
-       move; invalid -> stay + message; add field.highlight(attr=None); attrs_changed accumulates;
-       Apply = accept active + final checks + copy_to_master + Back.
-    c. row_screen task 5c: Cancel/Apply buttons in the Tab order (focus + highlight + Enter/Space run).
-    d. menu_screen: F8 = Back.
-    e. field.highlight also fixes one validation-display KNOWN BUG (do with 5b).
+    b. row_screen task 5b -- DONE + Pi-verified 2026-07-20 (suite 288).  accept_field (Enter/Tab/
+       BTab + Apply/Create) validates + writes to self.row + recompute() (repaints read-only/calc
+       fields) + moves; invalid -> highlight + message + stay.  validate() is now final-checks-only
+       (check_required + global_validate, wrapped); update() removed.  Apply/Create = accept active +
+       validate + copy_to_master/insert + Back.  Added field.highlight(attr=None) -> fixes the
+       "validation errors not displayed" KNOWN BUG.
+       - FIX (2026-07-20): Create failed check_required for a field entered but not Tab-accepted.
+         Apply/Create now accept_all() (accept EVERY changed field), and clicking into a different
+         field accepts the previous one, so mouse navigation commits + recomputes like Tab.
+    c. row_screen task 5c -- DONE + Pi-verified 2026-07-20 (suite 288).  Cancel/Apply(/Create) buttons
+       are in the Tab cycle (Tab/BTab walk fields-then-buttons, wrapping); a focused button draws in a
+       focus background color (button_focus_pair 0x0a, tunable) NOT reverse video; Enter/Space runs it;
+       Esc drops button focus.  A full redraw clears button focus.
+    d. menu_screen: F8 = Back -- DONE + Pi-verified 2026-07-20 (part of the base-class centralization).
+    e. field.highlight also fixes one validation-display KNOWN BUG -- DONE with 5b.
+    f. Base-class key centralization -- DONE + Pi-verified 2026-07-20 (suite 288).  F8=Back and F1=Help
+       now live on tui_base.screen.process_key (subclasses delegate via super() at the TOP, after any
+       specific override -- row_screen keeps its own F8 unapplied-changes guard).  show_help moved to
+       the base, driven by a help_lines class variable (help_title too); help_lines added for table,
+       row, and menu screens.  POPUP key/mouse routing also moved to base screen.process_key/
+       process_mouse (runs first, no-op when popup is None) -> Esc/Del closes a popup on EVERY screen
+       (fixes row/menu help popups that wouldn't dismiss); dropped table_screen's duplicated blocks.
+       This covers most of cross-cutting task 8 (ESC precedence: popup -> field abort -> Back).
 
 - Ordered tasks (each = small batch, tests folded in, verify on the Pi):
   1. F9/F10 keyboard menus -- DONE + Pi-verified 2026-07-19.  Factored _open_row_popup /
@@ -844,11 +861,12 @@
          DEFERRED.)
      Hit-testing: map y -> row (first_row + y-2), then find the cell whose field.enclose(y,x) is true
      (row_fields[row]); reuse the existing field.process_mouse.  Do this after task 5 (or whenever).
-  5. row_screen redesign per spec: remove Validate button; rename Submit->Apply (create keeps
-     'Create'); Cancel + Apply both Back (Cancel discards, Apply writes to master/db); accept-field
-     (ENTER/TAB/BTAB) always validates + recomputes calculated cols into self.row (copy) WITHOUT
-     writing master; ESC only Backs when unchanged (else no-op, no message).  Buttons in the Tab
-     sequence.  Careful with `changed` / attrs_changed bookkeeping across per-field accepts.
+  5. row_screen redesign per spec -- DONE + Pi-verified 2026-07-20 (superseded by NAV MODEL batches
+     5b/5c/5f above).  Validate button removed; Submit->Apply (create keeps 'Create'); Cancel + Apply
+     both Back (Cancel discards, Apply writes to master/db); accept-field (ENTER/TAB/BTAB + mouse)
+     validates + recomputes calc cols into self.row (copy) WITHOUT writing master; buttons in the Tab
+     sequence.  (ESC = abort field / drop button focus, never leaves; F8 = Back with the changed
+     guard -- diverges from the original "ESC Backs when unchanged" line, per the finalized nav model.)
   6. field ESC abort-reset (NEEDS DESIGN FIRST, then implement): snapshot text on activate; ESC
      restores the snapshot (only undoes the current edit session).  DESIGN QUESTION: after abort the
      `changed` flag must reflect text-vs-ORIGINAL-construction-value, not just "was edited" -- likely
@@ -858,6 +876,9 @@
      unnecessary if the F10 menu's Exit/Abort suffices).  Remove 'q' quit from screen.run when done.
   8. Cross-cutting: ESC precedence chain (popup -> field abort -> Back) applied uniformly;
      popup_message dismiss on ESC/ENTER/SPACE/click (ignore other keys).
+     - MOSTLY DONE 2026-07-20 (task 5f): popup routing centralized in base screen.process_key/
+       process_mouse (popup gets events first, on every screen); popup closes on ESC/DEL.
+     - STILL TODO: popup_message dismiss on ENTER/SPACE/click too (currently only ESC/DEL).
 
 - DEFERRED refinements (not blocking): popup mouse right-press-drag-select (open under mouse);
   menu_screen Left/Right between columns (UP/DOWN wrap already works); row_screen scroll (widest table
