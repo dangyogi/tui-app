@@ -139,6 +139,12 @@ class FakeRow:
     def set(self, name, val):
         self._values[name] = val
 
+    def __getattr__(self, name):        # copy_to_master reads getattr(self.row, attr)
+        try:
+            return self._values[name]
+        except KeyError:
+            raise AttributeError(name)
+
     def human_key(self):
         return "k"
 
@@ -180,3 +186,78 @@ def test_draw_body_grow_refresh_preserves_edit_and_refocuses():
     assert new.nlines >= 2                    # grew to fit
     assert s.active_field is new              # re-focused
     assert s.row.get("a") == "x"             # row NOT updated until submit
+
+
+# --- task 5b: accept-field / recompute / Apply ----------------------------------------------------
+
+def test_accept_field_writes_to_row():
+    cols = [FakeColumn("qty", can_edit=True)]
+    s = make_row_screen(cols, {"qty": "1"})
+    s.draw_body()
+    f = s.fields[0]
+    f.text = "5"
+    f.changed = True
+    assert s.accept_field(f) is True
+    assert s.row.get("qty") == "5"           # written into the copy
+    assert "qty" in s.attrs_changed
+    assert not f.changed
+
+
+def test_accept_field_invalid_stays_and_messages():
+    cols = [FakeColumn("qty", can_edit=True)]
+    s = make_row_screen(cols, {"qty": "1"})
+    s.draw_body()
+    s.cols = 80
+    s.button_y = 20
+    f = s.fields[0]
+    def bad(text):
+        raise ValueError("bad value")
+    f.field_shared.validate_fn = bad          # the field validates via field_shared.validate_fn
+    f.text = "x"
+    f.changed = True
+    assert s.accept_field(f) is False
+    assert s.error_field is f
+    assert s.msg_len > 0
+    assert s.row.get("qty") == "1"           # NOT written
+    assert "qty" not in s.attrs_changed
+
+
+def test_recompute_updates_readonly_fields():
+    cols = [FakeColumn("qty", can_edit=True), FakeColumn("total")]   # total is read-only
+    s = make_row_screen(cols, {"qty": "1", "total": "2"})
+    s.draw_body()
+    total_field = s.fields[1]
+    assert total_field.text == "2"
+    s.row.set("total", "8")                   # a recomputed value in the copy
+    s.recompute()
+    assert total_field.text == "8"            # read-only field repainted from self.row
+
+
+def test_tab_accepts_then_moves():
+    cols = [FakeColumn("a", can_edit=True), FakeColumn("b", can_edit=True)]
+    s = make_row_screen(cols, {"a": "1", "b": "2"})
+    s.draw_body()
+    s.activate_field(s.fields[0])
+    s.fields[0].text = "9"
+    s.fields[0].changed = True
+    s.process_key('\t')                       # accept a, then move to b
+    assert s.row.get("a") == "9"
+    assert s.active_field is s.fields[1]
+
+
+def test_apply_copies_to_master():
+    cols = [FakeColumn("a", can_edit=True)]
+    master = FakeRow(cols, {"a": "1"})
+    s = row_screen.for_update(master)
+    s.app = Mock(name="app")
+    s.cols = 25
+    s.lines = 40
+    s.init()
+    s.draw_body()
+    back = object()
+    s.back = back
+    s.activate_field(s.fields[0])
+    s.fields[0].text = "7"
+    s.fields[0].changed = True
+    assert s.execute('Apply') is back
+    assert master.get("a") == "7"             # accepted edit written through to the master row

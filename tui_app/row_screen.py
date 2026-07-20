@@ -112,26 +112,24 @@ class row_screen(tui_base.screen):
                 self.activate_field(None)
             return None
         if key == 'KEY_F(8)':                   # Back
-            if any(field.changed for field in self.fields):
+            if self.attrs_changed or any(field.changed for field in self.fields):
                 self.message("Unapplied changes: use Cancel or Apply to leave",
                              tui_base.curses.color_pair(self.error_msg_attr))
                 return None                     # don't leave with unapplied changes
             return self.back
-        if key == '\t':
-            if self.active_field is None:
-                offset = 0
-            else:
-                offset = self.active_field.screen_key + 1
+        if key == '\t' or key == 'KEY_ENTER' or key == '\n':   # accept, then next editable field
+            if self.active_field is not None and not self.accept_field(self.active_field):
+                return None                     # validation failed -> stay in the field
+            offset = 0 if self.active_field is None else self.active_field.screen_key + 1
             for i in range(len(self.fields)):
                 idx = (offset + i) % len(self.fields)
                 if self.fields[idx].can_edit:
                     self.activate_field(self.fields[idx])
                     return None
-        elif key == 'KEY_BTAB':
-            if self.active_field is None:
-                offset = len(self.fields)
-            else:
-                offset = self.active_field.screen_key - 1
+        elif key == 'KEY_BTAB':                 # accept, then previous editable field
+            if self.active_field is not None and not self.accept_field(self.active_field):
+                return None
+            offset = len(self.fields) if self.active_field is None else self.active_field.screen_key - 1
             for i in range(len(self.fields)):
                 idx = (offset - i) % len(self.fields)
                 if self.fields[idx].can_edit:
@@ -145,51 +143,74 @@ class row_screen(tui_base.screen):
             case 'Cancel':
                 trace(f"row_screen.execute: Cancel command going back to screen {self.back.title}")
                 return self.back
-            case 'Apply':  # updating a row (was Submit): write to master (db) + Back
+            case 'Apply':  # write the copy to the master row (db) + Back
                 trace(f"row_screen.execute: Apply")
-                if self.validate():
-                    trace(f"row_screen.execute: Validate passed")
-                    self.update()
-                    self.copy_to_master()
-                    if self.callback is not None:
-                        self.callback()
-                    trace(f"row_screen.execute -> {self.back=}")
-                    return self.back
-                trace(f"row_screen.execute: Validate failed -> None")
-                return None
+                if self.active_field is not None and not self.accept_field(self.active_field):
+                    return None                  # active field invalid -> stay
+                if not self.validate():
+                    return None
+                self.copy_to_master()
+                if self.callback is not None:
+                    self.callback()
+                trace(f"row_screen.execute -> {self.back=}")
+                return self.back
             case 'Create':  # creating a row
-                if self.validate():
-                    trace(f"row_screen.execute: Validate passed")
-                    self.update()
-                    self.insert()
-                    if self.callback is not None:
-                        self.callback()
-                    trace(f"row_screen.execute -> {self.back=}")
-                    return self.back
-                trace(f"row_screen.execute: Validate failed -> None")
-                return None
+                if self.active_field is not None and not self.accept_field(self.active_field):
+                    return None
+                if not self.validate():
+                    return None
+                self.insert()
+                if self.callback is not None:
+                    self.callback()
+                trace(f"row_screen.execute -> {self.back=}")
+                return self.back
         trace(f"row_screen.execute: forwarding to base screen class")
         ans = super().execute(command)
         trace(f"row_screen.execute -> {ans}")
         return ans
 
-    def validate(self):
-        r'''Returns True if all validation passes.
+    def accept_field(self, field):
+        r'''Validate `field` and, if valid, write it into self.row and recompute the calculated cells.
+        Returns True if accepted (or nothing to accept); False if it failed validation -- in which case
+        the field is highlighted and the error message shown, and the caller should stay put.
+        '''
+        if not field.changed:
+            return True
+        try:
+            field.validate()
+        except ValueError as exc:
+            field.highlight(tui_base.curses.color_pair(self.error_attr))
+            self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
+            self.error_field = field
+            return False
+        self.row.set(field.name, field.text)     # into the copy, NOT the master (that's Apply)
+        self.attrs_changed.add(field.name)
+        field.changed = False
+        self.recompute()
+        return True
 
-        Else dislays error message.
+    def recompute(self):
+        r'''Repaint the read-only (calculated) fields from self.row so an accepted edit's effect on
+        calculated columns shows immediately.
         '''
         for field in self.fields:
-            if field.changed:
-                self.attrs_changed.add(field.name)
-                try:
-                    field.validate()
-                except ValueError as exc:
-                    field.highlight(tui_base.curses.color_pair(self.error_attr))
-                    self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
-                    self.error_field = field
-                    return False
+            if not field.can_edit:
+                value = self.row.get(field.name)
+                if value != field.text:
+                    field.text = value
+                    field.paint()
+
+    def validate(self):
+        r'''Final checks before Apply/Create: required-field check (create mode) then global_validate.
+        Per-field validation already happened on accept_field.  Shows a message + returns False on
+        failure, else True.
+        '''
         if self.table is not None:
-            self.row.check_required(self.attrs_changed)
+            try:
+                self.row.check_required(self.attrs_changed)
+            except ValueError as exc:
+                self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
+                return False
         if self.global_validate is not None:
             msg = self.global_validate(self)
             if msg:
@@ -206,17 +227,6 @@ class row_screen(tui_base.screen):
             field.text = self.row.get(field.name)
             field.changed = False
             field.paint()
-
-    def update(self):
-        r'''Copies the values changed on the screen to self.row.
-
-        Returns screen event.
-        '''
-        for field in self.fields:
-            if field.changed:
-                self.row.set(field.name, field.text)
-                field.changed = False
-        return 'REFRESH'
 
     def copy_to_master(self):
         r'''Copies the values changed on the screen from self.row to self.master_row.

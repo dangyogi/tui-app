@@ -292,6 +292,15 @@ class field:
         for y, x, num in self.gen_locations(start, start + max(1, length)):
             stdscr.chgat(y, x, num, attr)
 
+    def highlight(self, attr=None):
+        r'''Flag a validation error by overlaying `attr` across the field's text; call with no attr to
+        restore the normal rendering (repaint).  Used by row_screen to mark/clear the offending field.
+        '''
+        if attr is None:
+            self.paint()
+        else:
+            self.chgat(0, len(self.text), attr)
+
     def reverse_attr(self, start=0, length=None):
         r'''This takes indexes into self.text.
 
