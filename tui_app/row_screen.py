@@ -227,7 +227,11 @@ class row_screen(tui_base.screen):
                     return None
                 if not self.validate():
                     return None
-                self.insert()
+                try:
+                    self.insert()               # table.insert -> add_row: dup key / bad FK -> ValueError
+                except ValueError as exc:
+                    self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
+                    return None                 # stay on the form so the user can fix it
                 if self.callback is not None:
                     self.callback()
                 trace(f"row_screen.execute -> {self.back=}")
@@ -268,13 +272,25 @@ class row_screen(tui_base.screen):
                 return False
         return True
 
+    def _get_value(self, name):
+        r'''Display value for a column from self.row, tolerating a calculated field that cannot compute
+        yet -- e.g. a foreign-key lookup on a not-yet-valid key (Items[item]) raises.  Such a field
+        shows blank until its inputs are valid; a genuinely bad FK is reported by check_foreign_keys on
+        Apply/Create.  Without this, editing a key column would crash the form on every recompute.
+        '''
+        try:
+            return self.row.get(name)
+        except Exception as exc:
+            trace(f"row_screen._get_value({name=}): {type(exc).__name__}: {exc} -> blank")
+            return ''
+
     def recompute(self):
         r'''Repaint the read-only (calculated) fields from self.row so an accepted edit's effect on
         calculated columns shows immediately.
         '''
         for field in self.fields:
             if not field.can_edit:
-                value = self.row.get(field.name)
+                value = self._get_value(field.name)
                 if value != field.text:
                     field.text = value
                     field.paint()
@@ -345,7 +361,7 @@ class row_screen(tui_base.screen):
             self.app.stdscr.addstr(lineno, 0, f"{column.name}:")
             old = prior.get(i)
             preserve = old is not None and old.changed   # in-progress edit lives only in the field
-            text = old.text if preserve else self.row.get(column.name)
+            text = old.text if preserve else self._get_value(column.name)
             shared = multi_line_shared(column, self.begin_x, self.width, self.app,
                                        nlines=1, creating=self.table is not None)
             # size to fit the text (grow handles typing beyond this); honor edit_width as extra room

@@ -393,3 +393,77 @@ def test_f12_exits_clean_row():
     s = make_screen([fake_field(0, True)])
     s.app.changed = False
     assert s.process_key('KEY_F(12)') == 'APP_EXIT'   # nothing unapplied -> exit cleanly
+
+
+def test_create_duplicate_key_shows_message_and_stays():
+    # table.insert raising ValueError (dup key / bad FK) must not crash: show a message, stay on form
+    cols = [FakeColumn("item", can_edit=True)]
+
+    class CreateRow(FakeRow):
+        row_screen_commands = ()
+        def check_required(self, attrs_in):
+            pass                                  # nothing missing -> validate() passes
+
+    class DupTable:
+        name = "T"
+        columns = cols
+        def row_class(self, create=False):
+            return CreateRow(cols, {})
+        def insert(self, **attrs):
+            raise ValueError("T: duplicate key 'dup'")
+
+    s = row_screen.for_create(DupTable())
+    s.app = Mock(name="app")
+    s.cols = 40
+    s.lines = 24
+    s.init()
+    s.draw_body()
+    s.fields[0].text = "dup"
+    s.fields[0].changed = True
+    assert s.execute('Create') is None            # dup -> stays on the form (not self.back)
+    assert s.msg_len > 0                            # error message was shown
+
+
+def test_create_missing_required_shows_message_and_stays():
+    # check_required raising ValueError must be caught by validate(): show a message, stay on form
+    cols = [FakeColumn("item", can_edit=True)]
+
+    class ReqRow(FakeRow):
+        row_screen_commands = ()
+        def check_required(self, attrs_in):
+            raise ValueError("T.check_required: missing attrs=['unit']")
+
+    class ReqTable:
+        name = "T"
+        columns = cols
+        def row_class(self, create=False):
+            return ReqRow(cols, {})
+        def insert(self, **attrs):
+            raise AssertionError("insert must not be reached when required check fails")
+
+    s = row_screen.for_create(ReqTable())
+    s.app = Mock(name="app")
+    s.cols = 40
+    s.lines = 24
+    s.init()
+    s.draw_body()
+    s.fields[0].text = "x"
+    s.fields[0].changed = True
+    assert s.execute('Create') is None            # required check failed -> stay
+    assert s.msg_len > 0
+
+
+def test_recompute_tolerates_calc_field_error():
+    # a calculated field whose get() raises (FK lookup on a not-yet-valid key) must not crash recompute
+    cols = [FakeColumn("qty", can_edit=True), FakeColumn("unit")]   # unit read-only/calculated
+    s = make_row_screen(cols, {"qty": "1", "unit": "ea"})
+    s.draw_body()
+    assert s.fields[1].text == "ea"
+    orig_get = s.row.get
+    def raising_get(name):
+        if name == "unit":
+            raise KeyError("Foobar")           # calc can't compute for an invalid item
+        return orig_get(name)
+    s.row.get = raising_get
+    s.recompute()                              # must not raise
+    assert s.fields[1].text == ""              # calc field blanked until inputs are valid
