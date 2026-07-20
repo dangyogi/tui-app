@@ -104,3 +104,33 @@ RESOLVED (2026-07-19, from claude's review + Bruce's answers):
     - Apply (was Submit) = write self.row to master (db) + Back.  Cancel = discard + Back.
     - ESC: only Backs when nothing changed (view-only); with unapplied changes it does
       nothing (no message) -- leave via Cancel or Apply.
+
+
+FINALIZED navigation model (2026-07-20) -- supersedes the table_screen/row_screen key rows above:
+
+  Global:
+    - F8 = Back on every screen (Esc is NO LONGER Back).
+    - Esc = cancel the innermost thing only: close an open popup, else abort the active field edit
+      (reset it).  Esc NEVER leaves the screen.  Popups still dismiss on Esc.  F1 = help.
+
+  One rule for arrows vs Tab: ARROWS act within the current field; TAB/BTAB move between fields.
+    - table_screen cells are single-line, so UP/DOWN have no in-field role -> they become row-nav.
+    - row_screen fields are multi-line, so UP/DOWN move within the field; TAB/BTAB do the field moves.
+
+  table_screen -- the focused cell is ALWAYS live; there is NO separate active/editing state (retires
+  the editing flag / SPACE-to-start-edit from the task-4 build):
+    - LEFT/RIGHT = cursor within the cell (was column-nav).
+    - UP/DOWN    = previous/next row (same column).
+    - TAB/BTAB   = previous/next editable cell (wraps across rows).  The ONLY column nav.
+    - printable  = insert (focus select-alls the cell, so the first char replaces).
+    - DEL/BACKSPACE = delete char (DEL is no longer delete-row).
+    - ENTER = commit + down.  ESC = abort the cell edit (reset to the row value).
+    - F5 = delete row (y/n confirm; a function key so it isn't hit accidentally).
+    - INS = create row.  F2 = open row.  F8 = Back.  F9/F10 = row/screen menu.
+    - A focused cell left-aligns (cursor visible); an unfocused cell displays at its column alignment
+      -- so `editing` becomes a FOCUS flag (set on focus / cleared on defocus), not a typing flag.
+
+  row_screen (already close to this):
+    - TAB/BTAB = previous/next field.  UP/DOWN = within the multi-line field.  LEFT/RIGHT = cursor.
+    - ENTER = accept + next field.  ESC = abort field (reset) + deselect.  F8 = Back.
+    - Cancel / Apply buttons are in the Tab order.

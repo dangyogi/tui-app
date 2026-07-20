@@ -69,31 +69,30 @@ def test_key_routed_to_active_field():
     f.process_key.assert_called_once_with('x')
 
 
-def test_esc_backs_when_unchanged():
+def test_f8_backs_when_unchanged():
     back = object()
     s = make_screen([fake_field(0, False), fake_field(1, True)])
     s.back = back
-    assert s.process_key('\x1B') is back        # view-only -> back
+    assert s.process_key('KEY_F(8)') is back    # F8 = Back; view-only -> back
 
 
-def test_esc_deselects_active_field_then_backs_when_unchanged():
-    back = object()
-    f = fake_field(0, True)
+def test_esc_deselects_active_field_and_stays():
+    f = fake_field(0, True)                     # not changed (default)
     s = make_screen([f])
-    s.back = back
+    s.back = object()
     s.active_field = f
-    assert s.process_key('\x1B') is back        # deselect + back (nothing changed)
-    assert s.active_field is None               # field was deselected
+    assert s.process_key('\x1B') is None        # Esc never leaves
+    assert s.active_field is None               # field was deselected (aborted)
 
 
-def test_esc_blocked_with_unapplied_changes():
+def test_f8_blocked_with_unapplied_changes():
     f = fake_field(0, True)
     f.changed = True
     s = make_screen([f])
     s.back = object()
     s.cols = 80
     s.button_y = 10
-    assert s.process_key('\x1B') is None        # unapplied changes -> stay
+    assert s.process_key('KEY_F(8)') is None    # unapplied changes -> stay
     assert s.msg_len > 0                        # a message was shown
 
 

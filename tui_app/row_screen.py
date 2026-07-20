@@ -53,14 +53,13 @@ class row_screen(tui_base.screen):
         self.master_row = row
         self.row = row.copy()
         self.columns = self.row.columns
-        self.row_screen_commands = list(row.row_screen_commands) \
-                                 + ['Cancel', 'Validate', 'Submit']
+        self.row_screen_commands = list(row.row_screen_commands) + ['Cancel', 'Apply']
 
     def init_table(self, table):
         self.table = table
         self.row = table.row_class(create=True)
         self.columns = self.table.columns
-        self.row_screen_commands = ['Cancel', 'Validate', 'Create']
+        self.row_screen_commands = ['Cancel', 'Create']
 
     def init(self):
         self.max_col_name_len = 0
@@ -107,14 +106,17 @@ class row_screen(tui_base.screen):
                 self._refocus = self.active_field.screen_key
             if tui_base.event_handled(key):
                 return key
-        if key == '\x1B':                       # Esc
+        if key == '\x1B':                       # Esc: abort the active field edit (never leaves)
             if self.active_field is not None:
-                self.activate_field(None)       # deselect the field, then fall through to Back
+                self.abort_field(self.active_field)
+                self.activate_field(None)
+            return None
+        if key == 'KEY_F(8)':                   # Back
             if any(field.changed for field in self.fields):
-                self.message("Unapplied changes: use the buttons above to leave",
+                self.message("Unapplied changes: use Cancel or Apply to leave",
                              tui_base.curses.color_pair(self.error_msg_attr))
                 return None                     # don't leave with unapplied changes
-            return self.back                    # nothing to apply: back to the previous screen
+            return self.back
         if key == '\t':
             if self.active_field is None:
                 offset = 0
@@ -143,17 +145,8 @@ class row_screen(tui_base.screen):
             case 'Cancel':
                 trace(f"row_screen.execute: Cancel command going back to screen {self.back.title}")
                 return self.back
-            case 'Validate':
-                trace(f"row_screen.execute: Validate")
-                if self.validate():
-                    trace(f"row_screen.execute: Validate passed")
-                    ans = self.update()
-                    trace(f"row_screen.execute -> {ans}")
-                    return ans
-                trace(f"row_screen.execute: Validate failed -> None")
-                return None
-            case 'Submit':  # updating a row
-                trace(f"row_screen.execute: Submit")
+            case 'Apply':  # updating a row (was Submit): write to master (db) + Back
+                trace(f"row_screen.execute: Apply")
                 if self.validate():
                     trace(f"row_screen.execute: Validate passed")
                     self.update()
@@ -203,6 +196,16 @@ class row_screen(tui_base.screen):
                 self.message(msg, tui_base.curses.color_pair(self.error_msg_attr))
                 return False
         return True
+
+    def abort_field(self, field):
+        r'''Esc: discard the field's in-progress edit -- reset its text to self.row's value (the last
+        accepted value, or the original if never accepted) and repaint.  self.row is the source of
+        truth, so this undoes only the current edit session.
+        '''
+        if field.changed:
+            field.text = self.row.get(field.name)
+            field.changed = False
+            field.paint()
 
     def update(self):
         r'''Copies the values changed on the screen to self.row.
