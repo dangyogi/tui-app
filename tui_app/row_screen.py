@@ -85,6 +85,9 @@ class row_screen(tui_base.screen):
         # run this past the fields
         for field in self.fields:
             if field.enclose(y, x):
+                if field is not self.active_field and self.active_field is not None:
+                    if not self.accept_field(self.active_field):
+                        return None              # current field invalid -> don't switch away
                 return field.process_mouse(mouse_event)
         return mouse_event
 
@@ -145,8 +148,8 @@ class row_screen(tui_base.screen):
                 return self.back
             case 'Apply':  # write the copy to the master row (db) + Back
                 trace(f"row_screen.execute: Apply")
-                if self.active_field is not None and not self.accept_field(self.active_field):
-                    return None                  # active field invalid -> stay
+                if not self.accept_all():        # accept EVERY changed field, not just the active one
+                    return None
                 if not self.validate():
                     return None
                 self.copy_to_master()
@@ -155,7 +158,7 @@ class row_screen(tui_base.screen):
                 trace(f"row_screen.execute -> {self.back=}")
                 return self.back
             case 'Create':  # creating a row
-                if self.active_field is not None and not self.accept_field(self.active_field):
+                if not self.accept_all():
                     return None
                 if not self.validate():
                     return None
@@ -188,6 +191,16 @@ class row_screen(tui_base.screen):
         self.attrs_changed.add(field.name)
         field.changed = False
         self.recompute()
+        return True
+
+    def accept_all(self):
+        r'''Accept every changed field (validate + write into self.row) -- covers fields edited then
+        navigated away from by mouse (which doesn't accept incrementally).  Returns False, leaving the
+        offending field highlighted + message shown, if any field fails validation.
+        '''
+        for field in self.fields:
+            if not self.accept_field(field):
+                return False
         return True
 
     def recompute(self):

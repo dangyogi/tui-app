@@ -291,3 +291,29 @@ def test_apply_after_blanking_optional_field():
     s.fields[0].changed = True
     assert s.execute('Apply') is s.back
     assert master.get("a") == ""             # blank written through (via get() -> "")
+
+
+def test_accept_all_accepts_every_changed_field():
+    # a field edited but never Tab-accepted (e.g. entered then Apply clicked) must still be captured
+    cols = [FakeColumn("a", can_edit=True), FakeColumn("b", can_edit=True)]
+    s = make_row_screen(cols, {"a": "1", "b": "2"})
+    s.draw_body()
+    s.fields[0].text = "9"; s.fields[0].changed = True
+    s.fields[1].text = "8"; s.fields[1].changed = True
+    assert s.accept_all() is True
+    assert s.row.get("a") == "9" and s.row.get("b") == "8"
+    assert s.attrs_changed == {"a", "b"}
+
+
+def test_mouse_click_field_accepts_previous():
+    cols = [FakeColumn("a", can_edit=True), FakeColumn("b", can_edit=True)]
+    s = make_row_screen(cols, {"a": "1", "b": "2"})
+    s.app.screen = s                         # so a field's set_position reaches the real activate_field
+    s.draw_body()
+    s.activate_field(s.fields[0])
+    s.fields[0].text = "9"; s.fields[0].changed = True
+    fb = s.fields[1]
+    s.process_mouse((0, fb.begin_x, fb.begin_y, 0, tui_base.curses.BUTTON1_CLICKED))
+    assert s.row.get("a") == "9"             # field a accepted when the click switched fields
+    assert "a" in s.attrs_changed
+    assert s.active_field is fb
