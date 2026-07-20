@@ -116,8 +116,8 @@ class table_screen(tui_base.screen):
             return mouse_event                       # below the last visible row -> bubble
         for field in self.row_fields[row]:
             if field.enclose(y, x):                  # an editable cell under the pointer
-                self._focus_cell(row, field.screen_key[1])
-                self.active_field.process_mouse(mouse_event)   # position cursor / select / start drag
+                if self._focus_cell(row, field.screen_key[1]):   # focus (may block on a bad commit)
+                    self.active_field.process_mouse(mouse_event)  # position cursor / select / drag
                 return None
         self._focus_cell(row, self._default_col())   # not on an editable cell -> focus the row
         return None
@@ -280,28 +280,51 @@ class table_screen(tui_base.screen):
         return key                              # Left/Right at a text edge, etc.: bubble (no-op)
 
     def _commit_edit(self):
-        r'''Write the focused cell through to its row (if changed, marking the app changed) and
-        recompute that row's calculated cells.  Does NOT change focus -- the caller (_focus_cell) does.
-        Write-through does NOT Save; that stays a separate app command.
+        r'''Write the focused cell through to its row if it changed (marking the app changed) and
+        recompute that row's calculated cells.  Returns True on success (or nothing to commit); on a
+        validation error (column.validate / to_python raising ValueError) pops an error message and
+        returns False so the caller (_focus_cell) leaves focus on the cell to be fixed.  Write-through
+        does NOT Save; that stays a separate app command.
         '''
         field = self.active_field
         if field is None or not field.can_edit or not field.changed:
-            return
+            return True
         row, col = field.screen_key
-        self.rows[row].set(self.columns[col].name, field.text)
+        name = self.columns[col].name
+        try:
+            if field.text.strip():           # empty is a required-check concern, not the converter's
+                field.validate()             # column.validate may raise ValueError
+            self.rows[row].set(name, field.text)   # to_python may also raise ValueError
+        except ValueError as exc:
+            self._cell_error(str(exc))
+            return False
         self.app.set_changed()
         field.changed = False
         self._recompute_row(row)
+        return True
+
+    def _cell_error(self, msg):
+        r'''Pop an error message for a failed cell commit (replacing any current popup).'''
+        if self.popup is not None:
+            self.popup.delete()
+        self.popup = tui_base.popup_message('Error', self, msg, self.error_attr)
 
     def _recompute_row(self, row):
         r'''Repaint the read-only (calculated) cells in `row` from self.rows[row] -- in place, no
-        rebuild -- so a committed edit's effect on calculated columns shows immediately.
+        rebuild -- so a committed edit's effect on calculated columns shows immediately.  A calculated
+        cell that can't compute yet (e.g. a foreign-key lookup on a not-yet-valid key raises) blanks
+        instead of crashing.
         '''
         if row not in self.row_fields:
             return
         for j, f in enumerate(self.row_fields[row]):
             if not f.can_edit:
-                value = self.rows[row].get(self.columns[j].name)
+                try:
+                    value = self.rows[row].get(self.columns[j].name)
+                except Exception as exc:
+                    trace(f"table_screen._recompute_row({row=}): {self.columns[j].name}: "
+                          f"{type(exc).__name__}: {exc} -> blank")
+                    value = ''
                 if value != f.text:
                     f.text = value
                     f.paint()
@@ -375,16 +398,19 @@ class table_screen(tui_base.screen):
 
     def _focus_cell(self, row, col):
         r'''Focus the cell at (row, col) -- col is 0 for a read-only table.  Commits the previously
-        focused cell first (moving focus is how an edit is committed).  An editable cell becomes live:
-        it left-aligns (cursor visible) and select-alls; the previous editable cell reverts to its
-        column's display alignment.  The row must be on screen (present in row_fields).
+        focused cell first (moving focus is how an edit is committed); if that commit fails validation
+        the move is aborted (an error popup is up and focus stays on the bad cell) and this returns
+        False.  An editable cell becomes live: it left-aligns (cursor visible) and select-alls; the
+        previous editable cell reverts to its column's display alignment.  Returns True on success.
+        The row must be on screen (present in row_fields).
         '''
         field = self.row_fields[row][col]
         if self.active_field is field:
-            return
+            return True
         old = self.active_field
         if old is not None:
-            self._commit_edit()                  # write-through the old cell's edit (if any)
+            if not self._commit_edit():          # write-through the old cell's edit (if any)
+                return False                     # invalid edit -> stay on the old cell
             old.deactivate()                     # clear its cursor / highlight
             if old.can_edit:
                 old.editing = False
@@ -394,6 +420,7 @@ class table_screen(tui_base.screen):
             field.editing = True
             field.paint()                        # re-render left-aligned for the cursor
         field.activate()                         # editable -> select-all; read-only -> reverse
+        return True
 
     def _default_col(self):
         r'''Column to focus when there is no current column: the first editable column, or 0 for a

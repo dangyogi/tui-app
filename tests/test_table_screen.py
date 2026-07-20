@@ -690,3 +690,45 @@ def test_del_does_not_delete_row(columns):
     scr.process_key('7')                         # cell now "7"
     scr.process_key('KEY_DC')                    # DEL routes to the field, never delete-row
     assert scr.popup is None                     # no delete-row confirm (that's F5 now)
+
+
+# --- cell commit validation + calc-field tolerance ------------------------------------------------
+
+def _raise_value_error(s):
+    raise ValueError("bad num")
+
+
+def test_cell_commit_invalid_stays_and_pops_error(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)                          # editable num_pkgs
+    f = scr.active_field
+    f.text = "bad"
+    f.changed = True
+    f.field_shared.validate_fn = _raise_value_error
+    assert scr._commit_edit() is False            # validation failed
+    assert scr.popup is not None                   # error popup shown
+    assert f.changed                               # still dirty (not written through)
+    assert scr.rows[1].get("num_pkgs") == "1"      # row keeps its original value
+
+
+def test_focus_cell_blocked_by_invalid_commit(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(1, 1)
+    f = scr.active_field
+    f.text = "bad"
+    f.changed = True
+    f.field_shared.validate_fn = _raise_value_error
+    assert scr._focus_cell(2, 1) is False          # moving off the bad cell is blocked
+    assert scr.active_field is f                     # focus stays on the bad cell
+
+
+def test_recompute_row_tolerates_calc_error(columns):
+    scr = make_drawn_screen(columns, 3)
+    orig_get = scr.rows[0].get
+    def raising_get(name):
+        if name == "unit":                          # calc column can't compute (bad FK)
+            raise KeyError("Foobar")
+        return orig_get(name)
+    scr.rows[0].get = raising_get
+    scr._recompute_row(0)                           # must not raise
+    assert scr.row_fields[0][2].text == ""          # calc cell blanked
