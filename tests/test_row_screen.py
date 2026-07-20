@@ -33,10 +33,13 @@ def make_screen(fields):
     s = row_screen("test")
     s.app = Mock(name="app")
     s.fields = fields
+    s.row_screen_commands = ['Cancel', 'Apply']   # buttons are part of the Tab cycle
+    s.button_y = 20
+    s.command_buttons_x = [(0, 5), (9, 13)]
     return s
 
 
-def test_tab_navigation_skips_readonly_and_wraps():
+def test_tab_cycles_fields_then_buttons():
     s = make_screen([fake_field(0, False), fake_field(1, True),
                      fake_field(2, False), fake_field(3, True)])
     # Tab from nothing -> first editable (index 1)
@@ -48,17 +51,45 @@ def test_tab_navigation_skips_readonly_and_wraps():
     assert s.active_field is s.fields[3]
     s.fields[1].deactivate.assert_called_once()
     s.fields[3].activate.assert_called_once()
-    # Tab -> wraps back to index 1
+    # Tab off the last field -> first button (Cancel), field deactivated
+    assert s.process_key('\t') is None
+    assert s.active_field is None
+    assert s.focused_button == 0
+    s.fields[3].deactivate.assert_called_once()
+    # Tab -> second button (Apply)
+    assert s.process_key('\t') is None
+    assert s.focused_button == 1
+    # Tab -> wraps back to the first editable field
     assert s.process_key('\t') is None
     assert s.active_field is s.fields[1]
+    assert s.focused_button is None
 
 
 def test_shift_tab_goes_backward():
     s = make_screen([fake_field(0, False), fake_field(1, True),
                      fake_field(2, False), fake_field(3, True)])
-    s.process_key('\t')                     # -> index 1
+    s.process_key('\t')                     # -> field 1
     assert s.process_key('KEY_BTAB') is None
-    assert s.active_field is s.fields[3]     # previous editable, wrapping upward
+    assert s.active_field is None
+    assert s.focused_button == 1             # BTab off the first field wraps to the last button (Apply)
+
+
+def test_enter_runs_focused_button():
+    back = Mock(name="back")
+    s = make_screen([fake_field(0, True)])
+    s.back = back
+    s.focused_button = 0                     # 'Cancel' -> Back
+    assert s.process_key('\n') is back
+    # Space runs it too
+    s.focused_button = 0
+    assert s.process_key(' ') is back
+
+
+def test_esc_drops_button_focus_and_stays():
+    s = make_screen([fake_field(0, True)])
+    s.focused_button = 1
+    assert s.process_key('\x1B') is None
+    assert s.focused_button is None
 
 
 def test_key_routed_to_active_field():

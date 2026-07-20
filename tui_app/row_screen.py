@@ -9,6 +9,7 @@ from .field import multi_line_shared
 
 class row_screen(tui_base.screen):
     active_field = None
+    focused_button = None  # index into row_screen_commands when a command button holds Tab focus
     _refocus = None        # screen_key to re-focus after a grow-REFRESH (None -> drop focus)
     msg_len = 0
     default_attr = 0x00
@@ -109,10 +110,15 @@ class row_screen(tui_base.screen):
                 self._refocus = self.active_field.screen_key
             if tui_base.event_handled(key):
                 return key
-        if key == '\x1B':                       # Esc: abort the active field edit (never leaves)
+        if self.focused_button is not None and key in ('KEY_ENTER', '\n', ' '):
+            return self.execute(self.row_screen_commands[self.focused_button])   # run the button
+        if key == '\x1B':                       # Esc: abort field / drop button focus (never leaves)
             if self.active_field is not None:
                 self.abort_field(self.active_field)
                 self.activate_field(None)
+            elif self.focused_button is not None:
+                self._draw_button(self.focused_button, focused=False)
+                self.focused_button = None
             return None
         if key == 'KEY_F(8)':                   # Back
             if self.attrs_changed or any(field.changed for field in self.fields):
@@ -120,25 +126,57 @@ class row_screen(tui_base.screen):
                              tui_base.curses.color_pair(self.error_msg_attr))
                 return None                     # don't leave with unapplied changes
             return self.back
-        if key == '\t' or key == 'KEY_ENTER' or key == '\n':   # accept, then next editable field
-            if self.active_field is not None and not self.accept_field(self.active_field):
-                return None                     # validation failed -> stay in the field
-            offset = 0 if self.active_field is None else self.active_field.screen_key + 1
-            for i in range(len(self.fields)):
-                idx = (offset + i) % len(self.fields)
-                if self.fields[idx].can_edit:
-                    self.activate_field(self.fields[idx])
-                    return None
-        elif key == 'KEY_BTAB':                 # accept, then previous editable field
-            if self.active_field is not None and not self.accept_field(self.active_field):
-                return None
-            offset = len(self.fields) if self.active_field is None else self.active_field.screen_key - 1
-            for i in range(len(self.fields)):
-                idx = (offset - i) % len(self.fields)
-                if self.fields[idx].can_edit:
-                    self.activate_field(self.fields[idx])
-                    return None
+        if key in ('\t', 'KEY_ENTER', '\n'):    # forward through the Tab sequence
+            self._tab(1)
+            return None
+        if key == 'KEY_BTAB':                   # backward through the Tab sequence
+            self._tab(-1)
+            return None
         return key
+
+    def _tab(self, direction):
+        r'''Move Tab-focus forward (+1) or backward (-1) through the sequence editable-fields-then-
+        command-buttons, wrapping around.  Accepts the active field before leaving it (staying put if
+        it fails validation).
+        '''
+        if self.active_field is not None and not self.accept_field(self.active_field):
+            return                              # active field invalid -> stay
+        items = [('field', f) for f in self.fields if f.can_edit] \
+              + [('button', i) for i in range(len(self.row_screen_commands))]
+        if not items:
+            return
+        cur = None
+        for j, (kind, obj) in enumerate(items):
+            if kind == 'field' and obj is self.active_field:
+                cur = j
+                break
+            if kind == 'button' and obj == self.focused_button:
+                cur = j
+                break
+        if cur is None:
+            nxt = 0 if direction > 0 else len(items) - 1
+        else:
+            nxt = (cur + direction) % len(items)
+        kind, obj = items[nxt]
+        if kind == 'field':
+            self._focus_field(obj)
+        else:
+            self._focus_button(obj)
+
+    def _focus_field(self, field):
+        if self.focused_button is not None:
+            self._draw_button(self.focused_button, focused=False)
+            self.focused_button = None
+        self.activate_field(field)
+
+    def _focus_button(self, i):
+        if self.active_field is not None:
+            self.activate_field(None)           # leave the field (deactivate)
+        prev = self.focused_button
+        self.focused_button = i
+        if prev is not None and prev != i:
+            self._draw_button(prev, focused=False)
+        self._draw_button(i, focused=True)
 
     def execute(self, command):
         trace(f"row_screen.execute({command=})")
@@ -307,17 +345,25 @@ class row_screen(tui_base.screen):
                           + 3 * (len(self.row_screen_commands) - 1)
         self.button_start_x = (self.cols - button_text_width) // 2
         button_x = self.button_start_x
+        # 0xf1 white on red (looks like error), 0xf2 white on green (hard to read), 0xf3 white on
+        # yellow (can't read), 0xf4 white on blue (goofy), 0xf5 white on purple (best of first 6),
+        # 0xf6 white on turquoise (hard to read) -- see draw of button color 0x05 in _draw_button
         self.command_buttons_x = []
         for command in self.row_screen_commands:
-            # 0xf1 is white on red, looks like error
-            # 0xf2 is white on green, hard to read
-            # 0xf3 is white on yellow, can't read it
-            # 0xf4 is white on blue, goofy
-            # 0xf5 is white on purple, best out of first 6
-            # 0xf6 is white on turquoise, hard to read
-            self.app.stdscr.addstr(self.button_y, button_x, command, tui_base.curses.color_pair(0x05))
             self.command_buttons_x.append((button_x, button_x + len(command) - 1))
             button_x += 3 + len(command)
+        self.focused_button = None                    # a full redraw drops any button Tab-focus
+        for i in range(len(self.row_screen_commands)):
+            self._draw_button(i, focused=False)
+
+    def _draw_button(self, i, focused):
+        r'''(Re)draw command button i, reversed when it currently holds Tab focus.'''
+        command = self.row_screen_commands[i]
+        x0, _ = self.command_buttons_x[i]
+        attr = tui_base.curses.color_pair(0x05)
+        if focused:
+            attr |= tui_base.curses.A_REVERSE
+        self.app.stdscr.addstr(self.button_y, x0, command, attr)
 
     def message(self, msg, attr):
         x = (self.cols - len(msg)) // 2  # center message
