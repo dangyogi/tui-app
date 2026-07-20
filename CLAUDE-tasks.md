@@ -850,17 +850,18 @@
      - MOUSE for cell editing moved to task 4M below (do all table_screen mouse together).
      - NOTE: emptying a REQUIRED field crashes (uncaught ValueError) -- logged under KNOWN BUGS as part
        of the validation-error-display cleanup.
-  4M. table_screen MOUSE to match USER_INTERACTION (currently process_mouse only does right-click
-     popups + wheel scroll; BUTTON1 is unhandled).  Add:
-       - LEFT CLICK on a cell -> focus that cell (select); on a read-only table, focus the row.
-       - LEFT DOUBLE-CLICK on an editable cell -> start edit AND position the cursor at the click
-         (route to the field, whose process_mouse already does click-position / drag-select / dbl-word
-         / triple-all).
-       - while editing, route BUTTON1 clicks/drags to the focused cell's field for cursor/selection.
-       - (right-click popups + wheel already done; the right-press-drag-select popup refinement stays
-         DEFERRED.)
-     Hit-testing: map y -> row (first_row + y-2), then find the cell whose field.enclose(y,x) is true
-     (row_fields[row]); reuse the existing field.process_mouse.  Do this after task 5 (or whenever).
+  4M. table_screen BUTTON1 MOUSE -- DONE + Pi-verified 2026-07-20 (suite 295).  Reinterpreted for the
+     finalized always-live-cell model (no separate "start edit"):
+       - LEFT CLICK focuses the cell under the pointer (commits/write-through the previously focused
+         cell) and routes the event to its field so the cursor lands at the click; double/triple-click
+         word-/all-select.  Only editable cells are hit-testable (read_only.enclose is always False),
+         so a click on a read-only cell / column gap focuses the ROW -- its first editable cell, or
+         column 0 for a fully read-only table -- keeping focus Tab-safe.
+       - DRAG-select (press -> motion -> release) routes to the focused cell while in_select; a drag
+         that wanders into another row/column is CLAMPED to the cell's bounds before routing (else
+         field.to_index asserts).  [found + fixed on the Pi.]
+       - right-click popups + wheel unchanged; the right-press-drag-select popup refinement stays
+         DEFERRED.
   5. row_screen redesign per spec -- DONE + Pi-verified 2026-07-20 (superseded by NAV MODEL batches
      5b/5c/5f above).  Validate button removed; Submit->Apply (create keeps 'Create'); Cancel + Apply
      both Back (Cancel discards, Apply writes to master/db); accept-field (ENTER/TAB/BTAB + mouse)
