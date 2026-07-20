@@ -884,9 +884,10 @@
        _unapplied_changes() helper.
   8. Cross-cutting: ESC precedence chain (popup -> field abort -> Back) applied uniformly;
      popup_message dismiss on ESC/ENTER/SPACE/click (ignore other keys).
-     - MOSTLY DONE 2026-07-20 (task 5f): popup routing centralized in base screen.process_key/
-       process_mouse (popup gets events first, on every screen); popup closes on ESC/DEL.
-     - STILL TODO: popup_message dismiss on ENTER/SPACE/click too (currently only ESC/DEL).
+     - DONE 2026-07-20.  Popup routing centralized in base screen.process_key/process_mouse (popup
+       gets events first, on every screen); popups close on ESC/DEL.  popup_message now also dismisses
+       on ENTER/SPACE and a left click, and IGNORES (consumes) every other key/mouse while it's up
+       (it has no selection).  popup_menu/popup_confirm keep ENTER/SPACE = run-selection.
 
 - DEFERRED refinements (not blocking): popup mouse right-press-drag-select (open under mouse);
   menu_screen Left/Right between columns (UP/DOWN wrap already works); row_screen scroll (widest table

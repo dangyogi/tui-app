@@ -473,6 +473,20 @@ class popup_message(popup):
         for lineno, line in enumerate(lines, 1):
             self.subwin.addstr(lineno, 2, f"{line:{self.width - 4}}", curses.color_pair(text_attr_pair))
 
+    def process_key(self, key):
+        r'''A message box has no selection: Esc/Del/Enter/Space (and a click, see process_mouse)
+        dismiss it; every other key is ignored (consumed) while it is up.'''
+        if key in ('\x1B', 'KEY_DELETE', 'KEY_DC', 'KEY_ENTER', '\n', ' '):
+            self.delete()
+        return None
+
+    def process_mouse(self, mouse_event):
+        r'''A left click dismisses the message; other mouse events are ignored while it is up.'''
+        _, x, y, _, bstate = mouse_event
+        if bstate == curses.BUTTON1_CLICKED:
+            self.delete()
+        return None
+
 class popup_menu(popup):
     def __init__(self, name, screen, commands, cmd_fn, begin_y, begin_x, outside_space='below'):
         super().__init__(name, screen, begin_y, begin_x,
