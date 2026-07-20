@@ -73,18 +73,53 @@ class table_screen(tui_base.screen):
         if tui_base.event_handled(mouse_event):
             return mouse_event
         _, x, y, _, bstate = mouse_event
-        trace(f"screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
-        if bstate == tui_base.curses.BUTTON3_CLICKED:
+        curses = tui_base.curses
+        trace(f"table_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        if bstate == curses.BUTTON3_CLICKED:
             if y >= 2:
                 self._open_row_popup(self.first_row + (y - 2), y + 1)   # row popup below the row
             else:
                 self._open_screen_popup()                              # table-level popup at the top
-        elif bstate == tui_base.curses.BUTTON4_PRESSED:
+            return None
+        if bstate == curses.BUTTON4_PRESSED:
             self.scroll_down(self.scroll_amount)
-        elif bstate == tui_base.curses.BUTTON5_PRESSED:
+            return None
+        if bstate == curses.BUTTON5_PRESSED:
             self.scroll_up(self.scroll_amount)
-        else:
-            return mouse_event
+            return None
+        if bstate in (curses.BUTTON1_CLICKED, curses.BUTTON1_DOUBLE_CLICKED,
+                      curses.BUTTON1_TRIPLE_CLICKED, curses.BUTTON1_PRESSED):
+            return self._button1(mouse_event, y, x)
+        if bstate in (curses.REPORT_MOUSE_POSITION, curses.BUTTON1_RELEASED):
+            # continue an in-progress drag-select, clamping the pointer into the focused cell so a drag
+            # that wanders into another row/column just selects out to this cell's edge
+            field = self.active_field
+            if getattr(field, 'in_select', False):
+                cy = min(max(y, field.begin_y), field.begin_y + field.nlines - 1)
+                cx = min(max(x, field.begin_x), field.begin_x + field.ncols - 1)
+                field.process_mouse((mouse_event[0], cx, cy, mouse_event[3], bstate))
+                return None
+        return mouse_event
+
+    def _button1(self, mouse_event, y, x):
+        r'''LEFT click/press on a data row: focus the cell under the pointer, committing the previously
+        focused cell.  Only editable cells are hit-testable (read_only.enclose is always False), so a
+        click landing on an editable cell focuses it and routes the event to its field (cursor position
+        / word- or all-select / drag start); a click elsewhere on the row (a read-only cell or the gap,
+        or any cell of a fully read-only table) focuses the row -- its first editable cell, or column 0.
+        '''
+        if y < 2:
+            return mouse_event                       # header / above the data -> bubble
+        row = self.first_row + (y - 2)
+        if row not in self.row_fields:
+            return mouse_event                       # below the last visible row -> bubble
+        for field in self.row_fields[row]:
+            if field.enclose(y, x):                  # an editable cell under the pointer
+                self._focus_cell(row, field.screen_key[1])
+                self.active_field.process_mouse(mouse_event)   # position cursor / select / start drag
+                return None
+        self._focus_cell(row, self._default_col())   # not on an editable cell -> focus the row
+        return None
 
     def process_key(self, key):
         key = super().process_key(key)          # popup routing + common keys (F8 Back, F1 help)

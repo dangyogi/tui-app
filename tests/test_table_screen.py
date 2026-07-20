@@ -108,6 +108,10 @@ def make_rows(n):
     return [FakeRow(item=f"item{i}", num_pkgs=i, unit="ea", num_units=2 * i) for i in range(n)]
 
 
+def make_rows_ab(n):
+    return [FakeRow(a=f"a{i}", b=f"b{i}") for i in range(n)]
+
+
 def test_row_fields_built(columns):
     scr = table_screen(FakeTable("Inv", columns, make_rows(3)))
     scr.app = Mock(name="app")
@@ -183,6 +187,81 @@ def test_focus_dropped_when_scrolled_off(columns):
     assert scr.active_field is not None
     scr.scroll_up(2)                              # rows 0,1 scroll off the top
     assert scr.active_field is None
+
+
+# --- task 4M: BUTTON1 mouse (focus a cell / route to the field / drag) -----------------------------
+
+def _click(scr, field, bstate):
+    return scr.process_mouse((0, field.begin_x, field.begin_y, 0, bstate))
+
+
+def test_left_click_focuses_editable_cell(columns):
+    scr = make_drawn_screen(columns, 3)
+    target = scr.row_fields[1][1]                 # row 1, editable num_pkgs
+    assert _click(scr, target, tui_base.curses.BUTTON1_CLICKED) is None
+    assert scr.active_field is target
+    assert target.editing                         # editable focused cell is live (left-aligned)
+
+
+def test_left_click_read_only_cell_focuses_row(columns):
+    scr = make_drawn_screen(columns, 3)
+    target = scr.row_fields[2][0]                 # row 2, read-only item
+    assert _click(scr, target, tui_base.curses.BUTTON1_CLICKED) is None
+    assert scr.active_field is scr.row_fields[2][1]   # focuses the row's first editable column
+
+
+def test_left_click_commits_previous_cell(columns):
+    scr = make_drawn_screen(columns, 3)
+    scr._focus_cell(0, 1)
+    scr.active_field.text = "9"
+    scr.active_field.changed = True
+    _click(scr, scr.row_fields[1][3], tui_base.curses.BUTTON1_CLICKED)
+    assert scr.rows[0].get("num_pkgs") == "9"     # old cell written through on focus change
+    assert scr.active_field is scr.row_fields[1][3]
+
+
+def test_fully_read_only_table_click_focuses_column_0():
+    cols = [FakeColumn("a"), FakeColumn("b")]     # no editable columns
+    scr = table_screen(FakeTable("RO", cols, make_rows_ab(3)))
+    scr.app = Mock(name="app")
+    scr.app.stdscr.inch.return_value = 0
+    scr.lines = 6
+    scr.cols = 80
+    scr.init()
+    scr.draw_body()
+    _click(scr, scr.row_fields[1][1], tui_base.curses.BUTTON1_CLICKED)
+    assert scr.active_field is scr.row_fields[1][0]   # read-only table -> focus the row (col 0)
+
+
+def test_click_above_data_rows_bubbles(columns):
+    scr = make_drawn_screen(columns, 3)
+    ev = (0, 5, 1, 0, tui_base.curses.BUTTON1_CLICKED)   # y=1 is the header, not a data row
+    assert scr.process_mouse(ev) is ev
+    assert scr.active_field is None
+
+
+def test_drag_routes_to_focused_cell(columns):
+    scr = make_drawn_screen(columns, 3)
+    target = scr.row_fields[0][1]
+    _click(scr, target, tui_base.curses.BUTTON1_PRESSED)   # press -> focus + start drag
+    assert scr.active_field is target
+    assert target.in_select
+    # a motion report continues the drag on the focused cell (handled, not bubbled)
+    assert scr.process_mouse((0, target.begin_x + 1, target.begin_y, 0,
+                              tui_base.curses.REPORT_MOUSE_POSITION)) is None
+
+
+def test_drag_outside_cell_is_clamped(columns):
+    # dragging into another row/column must not crash (to_index asserts on out-of-bounds coords)
+    scr = make_drawn_screen(columns, 3)
+    target = scr.row_fields[0][1]
+    _click(scr, target, tui_base.curses.BUTTON1_PRESSED)
+    # drag well above and to the right of the cell -> clamped to the cell, still handled
+    assert scr.process_mouse((0, target.begin_x + 999, target.begin_y - 5, 0,
+                              tui_base.curses.REPORT_MOUSE_POSITION)) is None
+    assert scr.process_mouse((0, 0, target.begin_y + 5, 0,
+                              tui_base.curses.BUTTON1_RELEASED)) is None
+    assert not target.in_select                    # release ended the drag
 
 
 def test_focus_preserved_on_full_redraw(columns):
