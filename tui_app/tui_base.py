@@ -183,6 +183,7 @@ class screen:
     active_field = None   # the currently active field object (see activate_field), or None
     help_title = "Navigation"
     help_lines = ()       # subclasses set their key/mouse help; empty -> F1 does nothing
+    help_hint = "F1=Help" # drawn top-right on row 0 when help_lines is non-empty (UI line 10)
 
     def __init__(self, title, back=None):
         r'''self.app is set by run.
@@ -349,6 +350,10 @@ class screen:
         self.app.stdscr.erase()
         self.app.stdscr.addstr(0, title_x, self.title, curses.A_REVERSE)   # center title
         self.app.draw_changed(title_x)
+        if self.help_lines:                                     # advertise F1 help, centered between
+            title_right = title_x + len(self.title)             # the title and the right screen edge
+            hint_x = title_right + (self.cols - title_right - len(self.help_hint)) // 2
+            self.app.stdscr.addstr(0, hint_x, self.help_hint)
         self.draw_body()
 
     def draw_body(self):

@@ -922,6 +922,42 @@
   menu_screen Left/Right between columns (UP/DOWN wrap already works); row_screen scroll (widest table
   ~1/3 screen, not needed yet).
 
+### NEXT PLAN (agreed 2026-07-21): process_mouse sweep, THEN menu_screen overhaul ###
+
+- Context: process_key was swept to match USER_INTERACTION (UI) + centralized on the base screen, but
+  process_mouse never got the same treatment.  Do the mouse sweep FIRST (it touches base/popup code the
+  menu overhaul sits on), then the menu_screen overhaul.  Include the modified tui_app/USER_INTERACTION
+  in the NEXT commit (Bruce's request).
+
+- PHASE 1 -- process_mouse sweep (align every screen's mouse with UI; small batches, Pi-verify each):
+  1. base screen: draw "F1=Help" at the top row, right, on EVERY screen (UI line 10).  Shared in the
+     base (a header-draw helper); currently not drawn anywhere.
+     - DONE + Pi-eyeballed 2026-07-21 (suite 318).  base draw() draws self.help_hint ("F1=Help", a
+       tunable class attr) on row 0 when help_lines is non-empty.  Flush-right was too easy to miss, so
+       it is CENTERED in the gap between the title's right edge and the screen's right edge
+       (hint_x = title_right + (cols - title_right - len(hint)) // 2).  Visual only, no unit test.
+  2. popup_menu rework (two aspects, do together -- both touch the entry hit-test / select math):
+     a. MOUSE gesture (UI lines 3-5): replace BUTTON1_CLICKED/DOUBLE_CLICKED with LEFT PRESS+DRAG =
+        highlight the entry under the pointer, LEFT RELEASE = execute, RELEASE outside = dismiss, drag
+        outside = deselect.  Clean up the latent if/if/else at tui_base.py:520-526.  (The long-deferred
+        popup-mouse refinement.)  popup_message mouse (left-click dismiss) is already fine.
+     b. MULTI-COLUMN layout (Bruce, 2026-07-21): break a long list of choices into multiple columns
+        (mirror how menu_screen already column-breaks its actions).  Changes the popup draw, select()
+        (an entry is now (col,row), not just a row), key nav (UP/DOWN within a column, maybe LEFT/RIGHT
+        between), and the mouse hit-test (y,x -> col,row -> index) -- which is why it rides with 2a.
+  3. menu_screen.process_mouse (UI line 45): DECISION NEEDED -- UI's mouse column says a single LEFT
+     CLICK executes (then DOWN), matching keyboard Enter; today single-click = select, dbl-click =
+     execute.  Confirm with Bruce before changing (single click would RUN the action).
+  4. table_screen / row_screen / field mouse: appear already aligned (tasks 4M / 5 / field.process_
+     mouse).  Just REVIEW against UI during the sweep; only touch if a real gap shows up.
+
+- PHASE 2 -- menu_screen overhaul (rough answer/question flow):
+  a. answer input processing: trap + DISPLAY validation errors (the KNOWN BUG below) -- today Enter
+     calls the callback with the raw string with NO validation.
+  b. widen the answer field: ask_question hard-codes entry_len = 5 (menu_screen.py:261) -> too tight;
+     give it more room for inserts (and it now scrolls, so a sensible width + the "<"/">" markers).
+  c. general cleanup of the question/answer path (the Esc-dismiss just landed; the rest needs rework).
+
 ### KNOWN BUGS (deferred) ###
 
 - FIXED 2026-07-20 (+ Pi-verified): create-path crashes -- all now show a message + stay on the form.

@@ -661,11 +661,6 @@ class editable:
         if self.position is None:
             trace(f"{self.name}.process_key({key=}): position not set")
             return key
-        if key == '\x1B':                        # Esc: abort this edit session, stay focused
-            trace(f"{self.name}.process_key({key=}): Esc -> abort + re-select")
-            self.abort()
-            self.activate()                      # re-select-all (never leaves; screen keeps focus)
-            return None
         if len(key) == 1 and curses.ascii.isprint(key):
             trace(f"{self.name}.process_key({key=}): {self.position=}, ascii.is_print")
             self.delete_selection(key)
@@ -705,6 +700,11 @@ class editable:
                     trace(f"{self.name}.process_key({key=}): "
                           f"{self.position=}, {len(self.text)=}")
                     self.set_position(self.position + 1)
+                case '\x1B':                             # Esc: abort this edit session, stay focused
+                    trace(f"{self.name}.process_key({key=}): Esc -> abort + re-select")
+                    self.abort()
+                    self.activate()                      # re-select-all (never leaves; screen keeps focus)
+                    return None
                 case _:
                     trace(f"{self.name}.process_key({key=}): unknown key")
                     return key

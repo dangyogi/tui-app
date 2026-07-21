@@ -63,8 +63,6 @@ row_screen:
     execute button      ENTER                           LEFT CLICK
 
 
-BTW, I updated line 621 in field.py
-
 
 RESOLVED (2026-07-19, from claude's review + Bruce's answers):
 
