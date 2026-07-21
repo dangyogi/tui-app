@@ -29,9 +29,11 @@ class action_shared(field_shared):
 
 class menu_screen(tui_base.screen):
     active_field = None
-    message = None
+    message = None          # general message, 2 lines ABOVE the question (show_message; unused for now)
+    error_message = None    # validation error, 2 lines BELOW the question/answer (show_error)
     question = None
     answer = None
+    answer_width = 12     # width of the ask_question answer field (it scrolls if the value is longer)
     error_pair = 0x01
     default_pair = 0x00
 
@@ -111,10 +113,14 @@ class menu_screen(tui_base.screen):
         key = super().process_key(key)          # popup routing (Esc closes a popup first) + F8/F1
         if tui_base.event_handled(key):
             return key
-        if key == '\x1B' and self.answer is not None:   # Esc (no popup): dismiss the whole question
-            trace("menu_screen.process_key: Esc -> dismiss question")
-            self.clear_question()               # the answer has no backing row, so there is nothing
-            return None                         # to reset to -- Esc cancels the prompt entirely
+        if key == '\x1B' and self.answer is not None:   # Esc: two-stage (matches table/row)
+            if self.error_message is not None:
+                trace("menu_screen.process_key: Esc -> dismiss error (keep question)")
+                self.clear_error()              # first Esc: dismiss the error, keep the prompt + entry
+            else:
+                trace("menu_screen.process_key: Esc -> dismiss question")
+                self.clear_question()           # second Esc (no error): bail out of the question
+            return None
         if self.answer is not None:
             ans = self.answer.process_key(key)
             if tui_base.event_handled(ans):
@@ -236,22 +242,32 @@ class menu_screen(tui_base.screen):
 
         # write question:
         if self.question is not None:
-            entry_len = 5
-            y = self.max_y + 4
-            x = (self.cols - len(self.question) - entry_len - 1) // 2  # center question/response
-            self.app.stdscr.addstr(y, x, self.question)
-            self.answer.paint()
+            self._draw_question()
+        if self.error_message is not None:      # validation error, 2 lines below the question/answer
+            self.show_error(self.error_message)
         trace("draw_body done")
        #trace()
 
     def show_message(self, msg, attr):
-        x = (self.cols - len(msg)) // 2  # center message
+        msg = msg[:self.cols - 1]            # clip to the line so a long message can't overflow
+        x = max(0, (self.cols - len(msg)) // 2)  # center; never negative
         self.app.stdscr.addstr(self.max_y + 2, x, msg, attr)
         self.message = msg
         self.message_attr = attr
 
     def show_error(self, msg):
-        self.show_message(msg, tui_base.curses.color_pair(self.error_pair))
+        r'''A validation error, drawn 2 lines BELOW the question/answer (show_message's slot is 2
+        ABOVE, reserved for other messages).'''
+        msg = msg[:self.cols - 1]               # clip to the line so a long error can't overflow
+        x = max(0, (self.cols - len(msg)) // 2)  # center; never negative
+        self.app.stdscr.addstr(self.max_y + 6, x, msg, tui_base.curses.color_pair(self.error_pair))
+        self.error_message = msg
+
+    def clear_error(self):
+        if self.error_message is not None:
+            x = max(0, (self.cols - len(self.error_message)) // 2)
+            self.app.stdscr.addstr(self.max_y + 6, x, self.error_message, tui_base.curses.A_INVIS)
+            self.error_message = None
 
     def clear_message(self):
         if self.message is not None:
@@ -259,36 +275,75 @@ class menu_screen(tui_base.screen):
             self.app.stdscr.addstr(self.max_y + 2, x, self.message, tui_base.curses.A_INVIS)
             self.message = None
 
-    def ask_question(self, question, callback, default=''):
+    def activate_field(self, field):
+        r'''The ask_question answer is NOT a menu action -- it manages its own cursor/selection and must
+        never become self.active_field.  If it did, the FIRST arrow press would (through
+        field.set_position -> activate_field) drop the running command's highlight AND re-select the
+        answer, undoing the move -- so arrows only "took" on the second press.  Ignore the answer here;
+        the running command stays highlighted while you answer.  Menu actions use the base behavior.
+        '''
+        if field is not self.answer:
+            super().activate_field(field)
+
+    def _question_xy(self):
+        r'''(y, x) of the question label; the answer field sits at x + len(question) + 1.'''
+        x = (self.cols - len(self.question) - self.answer_width - 1) // 2   # center question/response
+        return self.max_y + 4, x
+
+    def _draw_question(self):
+        y, x = self._question_xy()
+        self.app.stdscr.addstr(y, x, self.question)
+        self.answer.paint()
+
+    def ask_question(self, question, callback, default='', convert_fn=str):
+        r'''Prompt for a value.  convert_fn turns the typed string into the value passed to `callback`
+        (int, a date parser, ... ; str = free text), raising ValueError if the input is not valid.  The
+        callback receives the CONVERTED value and may itself raise ValueError to reject it (a business
+        rule); either way run_callback shows the message and keeps the prompt up for another try.
+        '''
         trace(f"menu_screen.ask_question({question=!r}, {default=!r})")
         self.clear_question()
-        entry_len = 5
-        y = self.max_y + 4
-        x = (self.cols - len(question) - entry_len - 1) // 2  # center question/response
-        self.app.stdscr.addstr(y, x, question)
-        shared = editable_single_shared("answer", 1, x + len(question) + 1, entry_len, self.app,
-                                        convert_fn=int,
+        self.question = question
+        self.callback = callback
+        y, x = self._question_xy()
+        shared = editable_single_shared("answer", 1, x + len(question) + 1, self.answer_width, self.app,
+                                        convert_fn=convert_fn,
                                        #alignment="right",
                                         left_placeholder="<", right_placeholder=">")
         self.answer = shared.edit_text(default, begin_y=y, screen_key=1, callback=self.run_callback)
-        self.question = question
-        self.callback = callback
+        self._draw_question()
+        self.answer.activate()          # select the whole default so the first keystroke replaces it
 
     def run_callback(self, s):
         trace(f"menu_screen.run_callback({s=!r})")
-        callback = self.callback
-        self.clear_question()  # sets self.callback to None
-        ans = callback(s)
+        self.clear_error()                      # clear any prior error before this attempt
+        # 1) type/format check.  A bad value keeps THIS prompt up (not yet torn down).
+        try:
+            value = self.answer.convert()
+        except ValueError as exc:
+            trace(f"menu_screen.run_callback: convert failed: {exc}")
+            self.show_error(str(exc))
+            return None
+        # 2) type-valid.  Tear down BEFORE the callback so a callback that chains to another question
+        #    (its ask_question) leaves that one up.  Capture what we need to re-ask on a business error.
+        question, callback = self.question, self.callback
+        convert_fn = self.answer.field_shared.convert_fn
+        self.clear_question()
+        try:
+            ans = callback(value)
+        except ValueError as exc:
+            trace(f"menu_screen.run_callback: callback rejected: {exc}")
+            self.show_error(str(exc))
+            self.ask_question(question, callback, s, convert_fn=convert_fn)   # re-ask with the entry
+            return None
         trace(f"menu_screen.run_callback -> {ans}")
         return ans
 
     def clear_question(self):
         if self.question is not None:
-            entry_len = 5
-            y = self.max_y + 4
-            x = (self.cols - len(self.question) - entry_len - 1) // 2  # center question/response
-            self.app.stdscr.addstr(y, x, self.question, tui_base.curses.A_INVIS) 
-            self.app.stdscr.addstr(y, x + len(self.question) + 1, ' ' * entry_len) 
+            y, x = self._question_xy()
+            self.app.stdscr.addstr(y, x, self.question, tui_base.curses.A_INVIS)
+            self.app.stdscr.addstr(y, x + len(self.question) + 1, ' ' * self.answer_width)
             self.question = None
             self.answer = None
             self.callback = None

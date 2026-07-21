@@ -471,6 +471,7 @@ class popup_message(popup):
     def __init__(self, name, screen, lines, text_attr_pair=0):
         if isinstance(lines, str):
             lines = [lines]
+        lines = [line[:max(1, screen.cols - 6)] for line in lines]   # clip so the box fits the screen
         text_width = max(len(line) for line in lines)
         begin_y = (screen.lines - len(lines) - 2) // 2
         begin_x = (screen.cols - text_width - 4) // 2

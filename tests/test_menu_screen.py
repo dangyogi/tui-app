@@ -8,8 +8,16 @@ replaced with Mock action fields so we can assert which becomes active without a
 
 from unittest.mock import Mock
 
+import pytest
+
 from tui_app import tui_base
 from tui_app.menu_screen import menu_screen
+
+
+@pytest.fixture(autouse=True)
+def patch_curses(monkeypatch):
+    # color_pair needs a live terminal; identity is enough (real fields in the ask_question tests paint).
+    monkeypatch.setattr(tui_base.curses, "color_pair", lambda n: n)
 
 
 class FakeAction:
@@ -125,3 +133,101 @@ def test_esc_dismisses_question():
     assert m.answer is None                         # clear_question tore it down...
     assert m.question is None
     callback.assert_not_called()                    # ...without running the callback
+
+
+# --- ask_question validation protocol -------------------------------------------------------------
+
+def make_menu_q(convert_fn=int, callback=None):
+    m = make_menu()
+    m.app.screen = m                                # so the answer field's activate_field routes to m
+    m.max_y, m.cols = 5, 80
+    m.ask_question("Q", callback or (lambda v: f"ok{v}"), "0", convert_fn=convert_fn)
+    return m
+
+
+def test_answer_is_never_active_field():
+    m = make_menu_q(convert_fn=int)
+    cmd = m.fields[0]
+    m.activate_field(cmd)                           # the running command is highlighted
+    m.activate_field(m.answer)                       # the answer must not steal it
+    assert m.active_field is cmd
+
+
+def test_answer_arrow_moves_on_first_press_and_keeps_command():
+    m = make_menu_q(convert_fn=int)                 # default "0": answer fully selected (pos 0, len 1)
+    cmd = m.fields[0]
+    m.activate_field(cmd)                           # running the command highlights it
+    m.answer.process_key('KEY_RIGHT')               # FIRST press
+    assert m.answer.position == 1                    # cursor moved immediately (not re-selected)
+    assert m.answer.selection_len == 0
+    assert m.active_field is cmd                     # command stays highlighted while answering
+
+
+def test_ask_question_selects_default_for_replace():
+    m = make_menu_q(convert_fn=int)                 # default "0"
+    assert m.answer.position == 0
+    assert m.answer.selection_len == len("0")       # whole default selected -> first keystroke replaces
+
+
+def test_answer_bad_type_shows_error_and_keeps_question():
+    ran = []
+    m = make_menu_q(convert_fn=int, callback=lambda v: ran.append(v))
+    m.answer.text = "abc"                           # not an int
+    assert m.run_callback("abc") is None
+    assert m.question == "Q"                        # prompt stays up (not torn down)
+    assert m.answer is not None
+    assert not ran                                  # app callback never called
+    assert m.error_message is not None                    # error is displayed
+
+
+def test_answer_business_error_reasks_with_entry():
+    def cb(v):
+        raise ValueError("too big")                 # type-valid but business-invalid
+    m = make_menu_q(convert_fn=int, callback=cb)
+    m.answer.text = "99"
+    assert m.run_callback("99") is None
+    assert m.question == "Q"                        # re-asked
+    assert m.answer.text == "99"                    # ...with the rejected entry as the default
+    assert m.error_message is not None                    # error shown
+
+
+def test_esc_two_stage_error_then_bail():
+    m = make_menu_q(convert_fn=int, callback=lambda v: (_ for _ in ()).throw(ValueError("nope")))
+    m.answer.text = "99"
+    m.run_callback("99")                            # business error -> re-asks + shows error below
+    assert m.error_message is not None and m.question == "Q"
+    assert m.process_key('\x1B') is None            # FIRST Esc: dismiss the error only
+    assert m.error_message is None
+    assert m.question == "Q" and m.answer is not None   # ...question stays up
+    assert m.process_key('\x1B') is None            # SECOND Esc: bail out of the question
+    assert m.question is None and m.answer is None
+
+
+def test_show_error_clips_long_message():
+    m = make_menu()
+    m.max_y, m.cols = 5, 40
+    m.show_error("x" * 200)                         # far wider than cols -> must clip, not overflow
+    assert m.error_message is not None
+    assert len(m.error_message) <= m.cols           # clipped to fit the line
+
+
+def test_answer_success_converts_clears_and_returns():
+    got = []
+    m = make_menu_q(convert_fn=int, callback=lambda v: got.append(v) or "next")
+    m.answer.text = "7"
+    assert m.run_callback("7") == "next"            # returns the callback's result
+    assert got == [7]                               # callback got the CONVERTED int, not "7"
+    assert m.question is None                        # prompt torn down
+    assert m.answer is None
+
+
+def test_answer_chaining_leaves_next_question_up():
+    m = make_menu_q(convert_fn=int, callback=None)
+    def cb(v):
+        m.ask_question("Q2", lambda v2: "done", "1", convert_fn=int)   # chain to another question
+        return None
+    m.callback = cb
+    m.answer.text = "5"
+    assert m.run_callback("5") is None
+    assert m.question == "Q2"                        # the chained question is the one left up
+    assert m.answer is not None

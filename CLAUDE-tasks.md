@@ -1012,6 +1012,37 @@
 
   BATCHES: A = field rename (convert_fn + field.convert(), + 2 callers + tui.py doc), behavior-neutral.
   B = menu_screen protocol + answer_width + geometry de-dup.  C = csv-inv-order callbacks + Pi-drive.
+  - A DONE + committed 2026-07-21 (236a10a), suite 330.
+  - B DONE 2026-07-21 (suite 334, UNCOMMITTED pending Pi drive): answer_width=12 class attr; _question_xy
+    + _draw_question helpers (de-dup the 3x geometry); ask_question(convert_fn=str) param; run_callback
+    is the validation gate -- convert() type-check keeps the prompt up on ValueError; else clear + call
+    callback (chaining-safe) which may raise ValueError -> show_error + re-ask with the entry.  Tests:
+    bad-type / business-reject-reask / success-converts / chaining.
+  - C DONE 2026-07-21 (csv-inv-order, UNCOMMITTED pending Pi drive): table_size_is / year_is+month_is /
+    date_is now receive the converted value, raise ValueError for business errors, dropped the
+    int(s)+show_error+clear_message+re-ask dance, pass convert_fn (int / date parser).  read_inv.py was
+    pre-existing BROKEN (module-level date_is/read_inv referenced app/step which aren't in scope; plus a
+    lastest/latest typo) -> restructured to nested closures inside read_inv_command (matches its
+    siblings), hoisted the answer-independent date bounds (earliest/latest/assert) above ask_question.
+  - PHASE 2 COMPLETE + Pi-verified 2026-07-21 (suite 344).  During the drive several things surfaced
+    and were fixed (all Pi-verified):
+    - field bug (pre-existing, from the table-mouse work): to_index returned -1 for an EMPTY field
+      (end_x-1 with end_x=0), so a click set position=-1 (no cursor drawn) and a double-click did
+      self.text[-1] (IndexError).  Fixed both to_index `-1` spots with max(0, ...); empty -> 0.
+    - UNIFIED error UX across the 3 screens (table_screen was the reference -- unchanged): first Esc
+      dismisses the error only (field/answer keeps the bad value to fix); second Esc does the normal
+      thing (row/table: field abort -> revert + select-all; menu: bail the question).  row_screen: the
+      red field highlight REMOVED (Bruce: not wanted); error is a plain message now.  menu_screen: error
+      drawn 2 lines BELOW the Q/A (show_message's 2-above slot left for future info messages); its own
+      error_message state; the orphan-on-dismiss bug gone.
+    - answer select-all on ask_question (first keystroke replaces the default); the answer is NEVER
+      self.active_field (menu.activate_field ignores it) so arrows act on the FIRST press and the running
+      command stays highlighted while answering.
+    - long-message clip: row.message / menu.show_error+show_message / popup_message all clip to the
+      screen width (a verbose ValueError text was overflowing addstr -> curses ERR).
+    - csv-inv-order month_is gained a 1-12 range check (Bruce) -- prevents the bad insert + exercises the
+      business-error re-ask on create-month.
+    - read_inv date path still unverified past the July season assert (out of season); runs to the guard.
 
 ### KNOWN BUGS (deferred) ###
 

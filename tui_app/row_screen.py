@@ -13,9 +13,7 @@ class row_screen(tui_base.screen):
     _refocus = None        # screen_key to re-focus after a grow-REFRESH (None -> drop focus)
     msg_len = 0
     default_attr = 0x00
-    error_attr = 0x10
     error_msg_attr = 0x10
-    error_field = None
 
     button_pair = 0x05         # black on purple: a normal command button
     button_focus_pair = 0x0a   # the button currently holding Tab focus
@@ -91,9 +89,6 @@ class row_screen(tui_base.screen):
             return result
         _, x, y, _, bstate = mouse_event
         trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
-        if self.error_field is not None:
-            self.error_field.highlight()
-            self.error_field = None
         self.clear_message()
         # run command
         if bstate == tui_base.curses.BUTTON1_CLICKED:
@@ -122,9 +117,9 @@ class row_screen(tui_base.screen):
 
     def process_key(self, key):
         trace(f"row_screen.process_key({key=}) {self.active_field=}")
-        if self.error_field is not None:
-            self.error_field.highlight()
-            self.error_field = None
+        if key == '\x1B' and self.msg_len:      # first Esc after an error dismisses it, field untouched;
+            self.clear_message()                # a second Esc then reaches the field -> abort + revert
+            return None
         self.clear_message()
         if key == 'KEY_F(8)':                   # specific override of Back: guard unapplied changes
             if self._unapplied_changes():
@@ -248,9 +243,7 @@ class row_screen(tui_base.screen):
             try:                                  # (blanked) field is the required-check's concern,
                 field.convert()                  # not the column converter's (e.g. float('') raises)
             except ValueError as exc:
-                field.highlight(tui_base.curses.color_pair(self.error_attr))
                 self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
-                self.error_field = field
                 return False
         self.row.set(field.name, field.text)     # into the copy, NOT the master (that's Apply)
         self.attrs_changed.add(field.name)
@@ -394,18 +387,15 @@ class row_screen(tui_base.screen):
         self.app.stdscr.addstr(self.button_y, x0, command, tui_base.curses.color_pair(pair))
 
     def message(self, msg, attr):
-        x = (self.cols - len(msg)) // 2  # center message
+        msg = msg[:self.cols - 1]            # clip to the line so a long error can't overflow (addstr ERR)
+        x = max(0, (self.cols - len(msg)) // 2)   # center; never negative
         self.app.stdscr.addstr(self.button_y + 2, x, msg, attr)
         self.msg_len = len(msg)
 
     def clear_message(self):
         if self.msg_len:
             x = (self.cols - self.msg_len) // 2  # center message
-            if self.error_field is not None:
-                attr_pair = self.error_field.default_attr_pair
-            else:
-                attr_pair = self.default_attr
             self.app.stdscr.addstr(self.button_y + 2, x, ' ' * self.msg_len,
-                                   tui_base.curses.color_pair(attr_pair))
+                                   tui_base.curses.color_pair(self.default_attr))
             self.msg_len = 0
 

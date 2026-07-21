@@ -120,6 +120,27 @@ def test_f8_backs_when_unchanged():
     assert s.process_key('KEY_F(8)') is back    # F8 = Back; view-only -> back
 
 
+def test_message_clips_long_text():
+    s = make_screen([fake_field(0, True)])
+    s.cols = 20
+    s.button_y = 10
+    s.message("y" * 200, 0)                      # far wider than cols -> clip, don't overflow (addstr ERR)
+    assert 0 < s.msg_len <= s.cols
+
+
+def test_esc_two_stage_dismisses_error_then_reaches_field():
+    f = fake_field(0, True, handled=True)
+    s = make_screen([f])
+    s.cols = 80
+    s.active_field = f
+    s.msg_len = 5                                # an error message is showing
+    assert s.process_key('\x1B') is None         # FIRST Esc: dismiss the error only...
+    assert s.msg_len == 0
+    f.process_key.assert_not_called()            # ...does NOT reach the field (no abort/revert yet)
+    assert s.process_key('\x1B') is None          # SECOND Esc: now reaches the field -> abort/revert
+    f.process_key.assert_called_once_with('\x1B')
+
+
 def test_esc_routed_to_active_field_and_stays():
     f = fake_field(0, True, handled=True)       # the field owns Esc-abort now (consumes it)
     s = make_screen([f])
@@ -261,8 +282,7 @@ def test_accept_field_invalid_stays_and_messages():
     f.text = "x"
     f.changed = True
     assert s.accept_field(f) is False
-    assert s.error_field is f
-    assert s.msg_len > 0
+    assert s.msg_len > 0                     # error message shown (no red highlight anymore)
     assert s.row.get("qty") == "1"           # NOT written
     assert "qty" not in s.attrs_changed
 
