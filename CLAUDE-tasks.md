@@ -848,8 +848,8 @@
        LEFT-aligned / display right-aligned (single_line owns its no-wrap paint now; field.editing flag).
        Fixed along the way: delete_selection cursor off-by-one; empty right-aligned cursor visibility.
      - MOUSE for cell editing moved to task 4M below (do all table_screen mouse together).
-     - NOTE: emptying a REQUIRED field crashes (uncaught ValueError) -- logged under KNOWN BUGS as part
-       of the validation-error-display cleanup.
+     - NOTE: emptying a REQUIRED field used to crash (uncaught ValueError) -- FIXED + Pi-verified
+       2026-07-21 (the _commit_edit try/except around row.set now catches it; no longer a problem).
   4M. table_screen BUTTON1 MOUSE -- DONE + Pi-verified 2026-07-20 (suite 295).  Reinterpreted for the
      finalized always-live-cell model (no separate "start edit"):
        - LEFT CLICK focuses the cell under the pointer (commits/write-through the previously focused
@@ -1056,23 +1056,17 @@
   catches ValueError from validation / row.set() -> pops an Error message, keeps the cell dirty, and
   _focus_cell aborts the move (stay on the bad cell); _recompute_row tolerates a calc cell that can't
   compute yet (blanks).  So editing a cell to a bad value shows a message instead of crashing.
-  STILL OPEN (part of the same cleanup, not yet done):
-    * the "validation errors not displayed properly" item below.  UPDATE 2026-07-21 (Pi verify of task
-      6): row_screen path is fixed (field.highlight, task 5b).  The REMAINING case is menu_screen
-      ask_question: an invalid answer (e.g. non-int) is NOT trapped/displayed -- Enter calls the
-      callback with the raw string without validating.  Bruce's call: menu_screen (the whole
-      question/answer + validation flow) NEEDS AN OVERHAUL; do this validation fix as part of that
-      overhaul later, not piecemeal.  See NEXT TASK below.
+  ALL FIXED (see below).
 
-- NEXT TASK (per Bruce, 2026-07-21): menu_screen OVERHAUL.  The ask_question / answer / validation flow
-  is rough (the editable answer field routes through the unified path but validation errors aren't
-  trapped or displayed; Esc-dismiss just landed but the rest needs rework).  Scope TBD -- design first.
+- menu_screen OVERHAUL -- DONE + Pi-verified 2026-07-21 (tui-app f5daf1d, csv-inv-order 14b8285).  This
+  was the "NEXT TASK".  ask_question now validates via convert_fn + traps/displays errors; see the
+  PHASE 2 COMPLETE note in the interaction-spec section above for the full account.
 
-- Validation errors not displayed properly (PRE-EXISTING; spotted 2026-07-18 while verifying step 3 on the Pi;
-  NOT introduced by the field refactor).  Repro: trigger a validation failure (e.g. an ask_question / a
-  row_screen Validate/Submit with a bad value) -- the error message doesn't show as it should.  Bruce: old bug,
-  fix later.  UPDATE 2026-07-21: row_screen side fixed (task 5b field.highlight); only the menu_screen
-  ask_question side remains -- folded into the menu_screen OVERHAUL (NEXT TASK above).
+- Validation errors not displayed properly -- FIXED 2026-07-21.  row_screen side via field.highlight
+  (task 5b); menu_screen ask_question side via the Phase-2 overhaul (run_callback now converts + shows
+  the error below the prompt + keeps it up to retry).  Also hardened: long error messages clip to the
+  screen width everywhere (row.message / menu.show_error / popup_message) so a verbose ValueError can't
+  crash addstr.
 
 ### dependencies ###
 
