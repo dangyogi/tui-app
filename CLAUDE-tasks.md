@@ -950,9 +950,16 @@
         mapping.  Key nav: UP/DOWN within a column, LEFT/RIGHT between columns.  select() highlights
         the flat index's cell.  popup_confirm (2 items) stays single-column, unchanged.
         New tests/test_popup_menu.py (layout, hit-test, key nav, gesture).
-  3. menu_screen.process_mouse (UI line 45): DECISION NEEDED -- UI's mouse column says a single LEFT
-     CLICK executes (then DOWN), matching keyboard Enter; today single-click = select, dbl-click =
-     execute.  Confirm with Bruce before changing (single click would RUN the action).
+  3. menu_screen.process_mouse (UI line 45): DONE 2026-07-21 (suite 330); NEEDS Pi drive.  Bruce OK'd
+     "match UI": a single LEFT CLICK on a runnable action now RUNS it (== keyboard Enter), instead of
+     the old single=select / double=execute.  A click-resolution DOUBLE_CLICK is accepted the same way
+     (runs once).  Clicking a non-runnable action bubbles (no-op).  help line updated; tests added
+     (test_left_click_runs_action / _ignores_unrunnable_action).  [Did NOT add an explicit "then DOWN"
+     move -- keyboard Enter doesn't either; keep parity.]
+     - ALSO (Bruce, 2026-07-21): TAB/BTAB now mirror DOWN/UP in menu_screen.process_key (Tab = next
+       action, BTab = previous), matching the "Tab/BTab move between fields" rule (actions are the
+       fields here).  help line -> "Up/Down, BTab/Tab .. select the previous / next action" (BTab/Tab
+       ordered prev/next to match).  test_tab_and_btab_mirror_down_and_up added.
   4. table_screen / row_screen / field mouse: appear already aligned (tasks 4M / 5 / field.process_
      mouse).  Just REVIEW against UI during the sweep; only touch if a real gap shows up.
 

@@ -8,6 +8,7 @@ replaced with Mock action fields so we can assert which becomes active without a
 
 from unittest.mock import Mock
 
+from tui_app import tui_base
 from tui_app.menu_screen import menu_screen
 
 
@@ -55,6 +56,16 @@ def test_key_up_wraps_to_last_runnable():
     assert m.active_field is m.fields[2]
 
 
+def test_tab_and_btab_mirror_down_and_up():
+    m = make_menu()
+    assert m.process_key('\t') is None             # Tab == Down: nothing active -> first runnable
+    assert m.active_field is m.fields[0]
+    assert m.process_key('\t') is None             # Tab: skip non-runnable index 1 -> index 2
+    assert m.active_field is m.fields[2]
+    assert m.process_key('KEY_BTAB') is None       # BTab == Up: back to index 0
+    assert m.active_field is m.fields[0]
+
+
 def test_f8_backs():
     back = object()
     m = make_menu()
@@ -82,6 +93,26 @@ def test_active_popup_gets_keys_first():
     m.popup = popup
     assert m.process_key('\x1B') is None
     popup.process_key.assert_called_once_with('\x1B')
+
+
+def test_left_click_runs_action():
+    m = make_menu()
+    for i, f in enumerate(m.fields):
+        f.enclose.return_value = (i == 0)         # pointer over field 0 (runnable)
+        f.action.execute.return_value = f"ran{i}"
+    result = m.process_mouse((0, 5, 5, 0, tui_base.curses.BUTTON1_CLICKED))
+    assert result == "ran0"                       # a single click runs the action (UI line 45)
+    m.fields[0].activate.assert_called_once()     # ...selecting it first
+    assert m.active_field is m.fields[0]
+
+
+def test_left_click_ignores_unrunnable_action():
+    m = make_menu()
+    event = (0, 5, 5, 0, tui_base.curses.BUTTON1_CLICKED)
+    for i, f in enumerate(m.fields):
+        f.enclose.return_value = (i == 1)         # pointer over field 1 (can't run)
+    assert m.process_mouse(event) == event        # bubbled, not executed
+    m.fields[1].activate.assert_not_called()
 
 
 def test_esc_dismisses_question():

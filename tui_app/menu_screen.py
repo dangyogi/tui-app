@@ -40,9 +40,9 @@ class menu_screen(tui_base.screen):
     may_run_pair  = 0x30  # yellow text
     must_run_pair = 0x20  # green text
     help_lines = [        # F1 help (base screen.show_help renders it)
-        "Up / Down .......... select the previous / next action",
+        "Up/Down, BTab/Tab .. select the previous / next action",
         "Enter / Space ...... run the selected action",
-        "click / dbl-click .. select / run an action",
+        "click .............. run an action",
         "r .................. reset all actions",
         "Esc ................ dismiss a question prompt",
         "F8 ................. back",
@@ -97,11 +97,10 @@ class menu_screen(tui_base.screen):
 
         trace(f"menu_screen.process_mouse({y=}, {x=}) in field {index=}, {field.name=}")
         match bstate:
-            case tui_base.curses.BUTTON1_CLICKED if field.action.can_run:
-                self.activate_field(field)
-                self.clear_message()
-                return None
-            case tui_base.curses.BUTTON1_DOUBLE_CLICKED if field.action.can_run:
+            # UI line 45: a single LEFT CLICK runs the action (== keyboard Enter); accept a
+            # click-resolution DOUBLE_CLICK the same way so a fast double still runs it once.
+            case tui_base.curses.BUTTON1_CLICKED | tui_base.curses.BUTTON1_DOUBLE_CLICKED \
+                    if field.action.can_run:
                 self.activate_field(field)
                 self.clear_message()
                 return self.execute(field.action)
@@ -120,7 +119,7 @@ class menu_screen(tui_base.screen):
             ans = self.answer.process_key(key)
             if tui_base.event_handled(ans):
                 return ans
-        if key == 'KEY_DOWN':
+        if key == 'KEY_DOWN' or key == '\t':    # Tab moves to the next action (like Down)
             if self.active_field is None:
                 offset = 0
             else:
@@ -131,7 +130,7 @@ class menu_screen(tui_base.screen):
                     self.activate_field(self.fields[field_index])
                     self.clear_message()
                     return None
-        elif key == 'KEY_UP':
+        elif key == 'KEY_UP' or key == 'KEY_BTAB':   # Shift-Tab moves to the previous action (like Up)
             if self.active_field is None:
                 offset = len(self.fields) - 1
             else:
