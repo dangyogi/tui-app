@@ -962,6 +962,17 @@
        ordered prev/next to match).  test_tab_and_btab_mirror_down_and_up added.
   4. table_screen / row_screen / field mouse: appear already aligned (tasks 4M / 5 / field.process_
      mouse).  Just REVIEW against UI during the sweep; only touch if a real gap shows up.
+     - REVIEWED 2026-07-21: all three ALIGN with UI, NO changes needed.  field.process_mouse:
+       click=move, double=word, triple=select-all, press+drag+release=select (REPORT/RELEASED guarded
+       on self.in_select -- the SAME defensive pattern popup_menu now uses for the dropped-PRESSED
+       ncurses quirk, so field is already resilient).  table_screen: left-click focuses+positions,
+       double-click word-selects, drag-select clamped to the cell, right-click popups, wheel scroll;
+       "start field edit" is subsumed by the always-live-cell model.  row_screen: button click
+       executes, field click accepts the prior field then focuses/positions; read-only fields aren't
+       hit-testable (no-op), consistent with Tab skipping them.
+
+- PHASE 1 (process_mouse sweep) COMPLETE 2026-07-21: items 1 (F1=Help) + 2 (popup_menu) + 3
+  (menu_screen click/Tab) done + committed + Pi-driven; item 4 review found no gaps.
 
 - PHASE 2 -- menu_screen overhaul (rough answer/question flow):
   a. answer input processing: trap + DISPLAY validation errors (the KNOWN BUG below) -- today Enter
