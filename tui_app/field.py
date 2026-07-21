@@ -422,7 +422,7 @@ class field:
         x -= self.begin_x
         start_x = self.starts[y]
         if start_x is None:
-            ans = len(self.text) - 1
+            ans = max(0, len(self.text) - 1)   # empty text -> 0, never -1 (no last char)
         else:
             skip = 0
             if y == 0 and self.scroll:
@@ -442,7 +442,7 @@ class field:
                 end_x = len(self.text)
             ans = start_x + max(0, x - self.pads[y])
             if ans >= end_x:
-                ans = end_x - 1
+                ans = max(0, end_x - 1)   # a click past the text clamps to the last char, or 0 if empty
        #trace(f"{self.name}.to_index({y=}, {x=}) -> {ans}")
         return ans
 
@@ -620,16 +620,17 @@ class editable:
         '''
         _, x, y, _, bstate = mouse_event
 
-        index = self.to_index(y, x)
+        index = self.to_index(y, x)          # a valid text index (>= 0; empty text -> 0)
 
         match bstate:
             case curses.BUTTON1_CLICKED:
                 trace(f"{self.name}.process_mouse({y=}, {x=}): BUTTON1_CLICKED")
                 self.set_position(index)
             case curses.BUTTON1_DOUBLE_CLICKED:
-                if self.text[index] == ' ':
+                if index >= len(self.text) or self.text[index] == ' ':
                     trace(f"{self.name}.process_mouse({y=}, {x=}): "
-                          f"BUTTON1_DOUBLE_CLICKED on space: ignored")
+                          f"BUTTON1_DOUBLE_CLICKED on space / empty: position only")
+                    self.set_position(index)
                 else:
                     trace(f"{self.name}.process_mouse({y=}, {x=}): BUTTON1_DOUBLE_CLICKED")
                     start = self.field_shared.start_of_word(self.text, index)

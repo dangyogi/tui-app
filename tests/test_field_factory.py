@@ -172,6 +172,31 @@ def test_abort_restores_snapshot_and_clears_changed(app):
     assert f.selection_len == 0
 
 
+def test_to_index_empty_field_is_zero(app):
+    # a click anywhere in an empty cell maps to index 0 (the sole cursor position), never -1
+    shared = editable_single_shared("x", 1, begin_x=10, ncols=8, app=app)
+    f = editable_single_line(1, "", shared, begin_y=5)
+    assert f.to_index(5, 10) == 0                    # left edge
+    assert f.to_index(5, 15) == 0                    # middle of the empty cell -> still 0, not -1
+
+
+def test_click_empty_field_shows_cursor(app):
+    # regression: to_index returned -1 for an empty field -> set_position(-1) -> no cursor drawn
+    shared = editable_single_shared("x", 1, begin_x=10, ncols=8, app=app)
+    f = editable_single_line(1, "", shared, begin_y=5)
+    assert f.process_mouse((0, 15, 5, 0, tui_base.curses.BUTTON1_CLICKED)) is None
+    assert f.position == 0                           # cursor at 0 (was -1)
+    assert f.selection_len == 0
+
+
+def test_double_click_empty_field_does_not_crash(app):
+    # regression: BUTTON1_DOUBLE_CLICKED did self.text[-1] on an empty field -> IndexError
+    shared = editable_single_shared("x", 1, begin_x=10, ncols=8, app=app)
+    f = editable_single_line(1, "", shared, begin_y=5)
+    assert f.process_mouse((0, 15, 5, 0, tui_base.curses.BUTTON1_DOUBLE_CLICKED)) is None
+    assert f.position == 0                           # no word to select; cursor set, no IndexError
+
+
 def test_esc_aborts_and_reselects(app):
     shared = editable_single_shared("x", 1, begin_x=0, ncols=20, app=app)
     f = editable_single_line(1, "orig", shared, begin_y=5)
