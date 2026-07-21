@@ -120,13 +120,14 @@ def test_f8_backs_when_unchanged():
     assert s.process_key('KEY_F(8)') is back    # F8 = Back; view-only -> back
 
 
-def test_esc_deselects_active_field_and_stays():
-    f = fake_field(0, True)                     # not changed (default)
+def test_esc_routed_to_active_field_and_stays():
+    f = fake_field(0, True, handled=True)       # the field owns Esc-abort now (consumes it)
     s = make_screen([f])
     s.back = object()
     s.active_field = f
     assert s.process_key('\x1B') is None        # Esc never leaves
-    assert s.active_field is None               # field was deselected (aborted)
+    f.process_key.assert_called_once_with('\x1B')   # forwarded to the field (which aborts + re-selects)
+    assert s.active_field is f                   # stays focused (no screen-level deselect)
 
 
 def test_f8_blocked_with_unapplied_changes():

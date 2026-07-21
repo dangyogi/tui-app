@@ -145,13 +145,9 @@ class row_screen(tui_base.screen):
                 return key
         if self.focused_button is not None and key in ('KEY_ENTER', '\n', ' '):
             return self.execute(self.row_screen_commands[self.focused_button])   # run the button
-        if key == '\x1B':                       # Esc: abort field / drop button focus (never leaves)
-            if self.active_field is not None:
-                self.abort_field(self.active_field)
-                self.activate_field(None)
-            elif self.focused_button is not None:
-                self._draw_button(self.focused_button, focused=False)
-                self.focused_button = None
+        if key == '\x1B' and self.focused_button is not None:   # Esc: drop button focus (never leaves;
+            self._draw_button(self.focused_button, focused=False)   # a field's own Esc-abort is handled
+            self.focused_button = None                              # by the field via the forward above)
             return None
         if key in ('\t', 'KEY_ENTER', '\n'):    # forward through the Tab sequence
             self._tab(1)
@@ -259,6 +255,7 @@ class row_screen(tui_base.screen):
         self.row.set(field.name, field.text)     # into the copy, NOT the master (that's Apply)
         self.attrs_changed.add(field.name)
         field.changed = False
+        field.snapshot = field.text              # new abort baseline: a later Esc undoes to HERE
         self.recompute()
         return True
 
@@ -312,16 +309,6 @@ class row_screen(tui_base.screen):
                 self.message(msg, tui_base.curses.color_pair(self.error_msg_attr))
                 return False
         return True
-
-    def abort_field(self, field):
-        r'''Esc: discard the field's in-progress edit -- reset its text to self.row's value (the last
-        accepted value, or the original if never accepted) and repaint.  self.row is the source of
-        truth, so this undoes only the current edit session.
-        '''
-        if field.changed:
-            field.text = self.row.get(field.name)
-            field.changed = False
-            field.paint()
 
     def copy_to_master(self):
         r'''Copies the changed values from self.row (the copy) to self.master_row.  set() takes a csv

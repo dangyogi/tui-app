@@ -868,11 +868,40 @@
      validates + recomputes calc cols into self.row (copy) WITHOUT writing master; buttons in the Tab
      sequence.  (ESC = abort field / drop button focus, never leaves; F8 = Back with the changed
      guard -- diverges from the original "ESC Backs when unchanged" line, per the finalized nav model.)
-  6. field ESC abort-reset (NEEDS DESIGN FIRST, then implement): snapshot text on activate; ESC
-     restores the snapshot (only undoes the current edit session).  DESIGN QUESTION: after abort the
-     `changed` flag must reflect text-vs-ORIGINAL-construction-value, not just "was edited" -- likely
-     capture the original value at construction and compute changed, OR store both original + session
-     snapshot.  Resolve before coding (Bruce flagged this as needing thought).
+  6. field ESC abort-reset -- DONE (2026-07-21, suite 318 on the Pi).  Bruce Pi-verified: menu Esc
+     dismisses the question; row/table Esc abort + re-select correctly (stray-cursor bug below fixed).
+     Two parts:
+     a. menu_screen ask_question had NO abort (Esc bubbled, did nothing) and -- being an isolated,
+        rowless field -- could not use the screens' reset-to-row abort at all.  Bruce's call: Esc
+        DISMISSES the whole question (clear_question, no callback), rather than resetting the answer.
+        Added to menu_screen.process_key AFTER super() (so a popup still gets Esc first) and BEFORE
+        forwarding to the answer field (so the field's own Esc-abort doesn't swallow it).  help line +
+        test_esc_dismisses_question added.
+     b. field-owned snapshot (the actual "task 6"): field.snapshot (set at construction, refreshed to
+        field.text on accept_field / _commit_edit, carried through from_field) + field.abort()
+        (restore snapshot, clear changed, repaint).  editable.process_key now handles Esc itself
+        (abort + activate/re-select, stay focused) and returns handled; row_screen.abort_field and
+        table_screen._abort_edit are DELETED, and their Esc call-sites collapse (row_screen keeps only
+        the button-focus-drop Esc branch).  So the field owns the abort mechanism AND its Esc routing;
+        screens no longer reach into their row model to reset a field.
+     - DESIGN QUESTION RESOLVED: no computed-`changed` / stored-original needed.  Because the snapshot
+       is refreshed to the accepted value on every accept/commit, snapshot == the last-accepted
+       baseline == the row value, so after abort the text matches the baseline and `changed = False` is
+       correct by construction.  This is provably identical to the old reset-to-row behavior for
+       row/table (verified by the unchanged test_cell_edit_abort_restores_row_value), just decoupled
+       from the screen's row and now also serving the rowless answer path.
+     - ONE deliberate behavior change: row_screen Esc now STAYS focused (re-select-all) instead of
+       deselecting (old activate_field(None)); consistent with table_screen and fine under the
+       finalized "Esc never leaves" model (the old deselect existed only for the retired
+       "second Esc backs").  test_esc_routed_to_active_field_and_stays updated to assert this.
+     - STRAY-CURSOR BUG found + fixed during Pi verify (row AND table): after Esc-abort the field
+       showed the select-all PLUS a reverse block after the last char.  Cause: single_line/multi_line
+       paint() ends with set_attrs(), and abort() called paint() while self.position still held the
+       stale (post-edit) cursor index -- past the now-shorter restored text -- so set_attrs drew a
+       reverse cell there, which activate()'s select-all ([0,len)) didn't overwrite.  Fix: abort() now
+       clears position=None / selection_len=0 BEFORE paint() (so its trailing set_attrs draws nothing);
+       activate() then overlays the select-all via set_attrs (no second paint).  test_abort_* asserts
+       abort clears position.
   7. app exit/abort keys -- DONE + Pi-verified 2026-07-20 (suite 298).  F12 = exit, handled on the
      BASE screen (works everywhere): clean -> APP_EXIT; unsaved changes -> popup_confirm "Discard
      changes and exit?" (Yes -> APP_ABORT discard+quit, No -> stay), mirroring the F10 Exit/Abort.
@@ -906,14 +935,22 @@
   _focus_cell aborts the move (stay on the bad cell); _recompute_row tolerates a calc cell that can't
   compute yet (blanks).  So editing a cell to a bad value shows a message instead of crashing.
   STILL OPEN (part of the same cleanup, not yet done):
-    * the "validation errors not displayed properly" item below (row_screen field.highlight was added
-      with 5b, but the menu_screen ask_question / popup_message error path may still be off).
+    * the "validation errors not displayed properly" item below.  UPDATE 2026-07-21 (Pi verify of task
+      6): row_screen path is fixed (field.highlight, task 5b).  The REMAINING case is menu_screen
+      ask_question: an invalid answer (e.g. non-int) is NOT trapped/displayed -- Enter calls the
+      callback with the raw string without validating.  Bruce's call: menu_screen (the whole
+      question/answer + validation flow) NEEDS AN OVERHAUL; do this validation fix as part of that
+      overhaul later, not piecemeal.  See NEXT TASK below.
+
+- NEXT TASK (per Bruce, 2026-07-21): menu_screen OVERHAUL.  The ask_question / answer / validation flow
+  is rough (the editable answer field routes through the unified path but validation errors aren't
+  trapped or displayed; Esc-dismiss just landed but the rest needs rework).  Scope TBD -- design first.
 
 - Validation errors not displayed properly (PRE-EXISTING; spotted 2026-07-18 while verifying step 3 on the Pi;
   NOT introduced by the field refactor).  Repro: trigger a validation failure (e.g. an ask_question / a
   row_screen Validate/Submit with a bad value) -- the error message doesn't show as it should.  Bruce: old bug,
-  fix later.  claude: not yet investigated; likely in menu_screen.clear_question / the popup_message error path or
-  row_screen.validate's error highlight.  Pick up after the field-scroll migration (step 4) / F9-F10 menus.
+  fix later.  UPDATE 2026-07-21: row_screen side fixed (task 5b field.highlight); only the menu_screen
+  ask_question side remains -- folded into the menu_screen OVERHAUL (NEXT TASK above).
 
 ### dependencies ###
 

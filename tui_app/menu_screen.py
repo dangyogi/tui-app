@@ -44,6 +44,7 @@ class menu_screen(tui_base.screen):
         "Enter / Space ...... run the selected action",
         "click / dbl-click .. select / run an action",
         "r .................. reset all actions",
+        "Esc ................ dismiss a question prompt",
         "F8 ................. back",
         "F12 ................ exit the app",
         "F1 ................. this help",
@@ -108,9 +109,13 @@ class menu_screen(tui_base.screen):
 
     def process_key(self, key):
         trace(f"menu_screen.process_key({key=}) {self.active_field=}")
-        key = super().process_key(key)          # popup routing + common keys (F8 Back, F1 help)
+        key = super().process_key(key)          # popup routing (Esc closes a popup first) + F8/F1
         if tui_base.event_handled(key):
             return key
+        if key == '\x1B' and self.answer is not None:   # Esc (no popup): dismiss the whole question
+            trace("menu_screen.process_key: Esc -> dismiss question")
+            self.clear_question()               # the answer has no backing row, so there is nothing
+            return None                         # to reset to -- Esc cancels the prompt entirely
         if self.answer is not None:
             ans = self.answer.process_key(key)
             if tui_base.event_handled(ans):

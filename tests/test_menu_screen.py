@@ -82,3 +82,15 @@ def test_active_popup_gets_keys_first():
     m.popup = popup
     assert m.process_key('\x1B') is None
     popup.process_key.assert_called_once_with('\x1B')
+
+
+def test_esc_dismisses_question():
+    m = make_menu()
+    m.max_y, m.cols = 5, 80
+    m.question = "How many?"
+    m.answer = Mock(name="answer")                  # the isolated ask_question field
+    callback = m.callback = Mock(name="callback")   # keep a ref: clear_question nulls m.callback
+    assert m.process_key('\x1B') is None            # Esc dismisses the whole question (never leaves)
+    assert m.answer is None                         # clear_question tore it down...
+    assert m.question is None
+    callback.assert_not_called()                    # ...without running the callback

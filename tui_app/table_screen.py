@@ -264,9 +264,9 @@ class table_screen(tui_base.screen):
         return None
 
     def _cell_key(self, key):
-        r'''Route an edit key (Left/Right cursor, typing, Delete) to the focused cell.  The field
-        consumes what it can; a bubbled Esc aborts the cell edit.  TAB/BTAB/UP/DOWN/Enter are handled
-        as navigation in process_key and never reach here.
+        r'''Route an edit key (Left/Right cursor, typing, Delete, Esc-abort) to the focused cell.  The
+        field consumes what it can (Esc aborts the edit + re-selects, staying focused); TAB/BTAB/UP/
+        DOWN/Enter are handled as navigation in process_key and never reach here.
         '''
         field = self.active_field
         if not field.can_edit:
@@ -274,9 +274,6 @@ class table_screen(tui_base.screen):
         result = field.process_key(key)
         if tui_base.event_handled(result):
             return result                       # field handled it (None) or returned a sentinel
-        if result == '\x1B':                    # Esc -> abort the cell edit (reset, stay focused)
-            self._abort_edit()
-            return None
         return key                              # Left/Right at a text edge, etc.: bubble (no-op)
 
     def _commit_edit(self):
@@ -300,6 +297,7 @@ class table_screen(tui_base.screen):
             return False
         self.app.set_changed()
         field.changed = False
+        field.snapshot = field.text              # new abort baseline: a later Esc undoes to HERE
         self._recompute_row(row)
         return True
 
@@ -328,17 +326,6 @@ class table_screen(tui_base.screen):
                 if value != f.text:
                     f.text = value
                     f.paint()
-
-    def _abort_edit(self):
-        r'''Esc: discard the cell's in-progress edit -- re-read its value from the row and repaint,
-        staying focused (still left-aligned, re-selected).
-        '''
-        field = self.active_field
-        row, col = field.screen_key
-        field.text = self.rows[row].get(self.columns[col].name)
-        field.changed = False
-        field.paint()                            # editing stays True -> left-aligned
-        field.activate()                         # re-select-all
 
     def scroll_up(self, nlines):
         trace(f"scroll_up({nlines})")

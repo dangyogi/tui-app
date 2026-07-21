@@ -144,6 +144,7 @@ def test_from_field_preserves_edit_state(app):
     old.changed = True
     old.position = 3
     old.selection_len = 2
+    old.snapshot = "hello"               # the edit-session baseline (differs from the grown text)
     old.attr_pair = 0x06                 # a column_attr_pair(row) highlight
     new = shared.from_field(old, begin_y=9, screen_key=1)
     assert isinstance(new, editable)
@@ -151,5 +152,33 @@ def test_from_field_preserves_edit_state(app):
     assert new.changed is True
     assert new.position == 3
     assert new.selection_len == 2
+    assert new.snapshot == "hello"       # carried across the grow-REFRESH (abort undoes the whole visit)
     assert new.begin_y == 9
     assert new.attr_pair == 0x06         # highlight preserved, not reset to default
+
+
+def test_abort_restores_snapshot_and_clears_changed(app):
+    shared = editable_single_shared("x", 1, begin_x=0, ncols=20, app=app)
+    f = editable_single_line(1, "orig", shared, begin_y=5)
+    assert f.snapshot == "orig"          # construction seeds the abort baseline
+    f.activate()
+    f.position = 4                       # cursor left past where the shorter snapshot ends
+    f.insert("Z")                        # simulate an edit
+    assert f.changed is True
+    f.abort()
+    assert f.text == "orig"              # restored to the snapshot
+    assert f.changed is False            # snapshot IS the accepted baseline -> clean afterwards
+    assert f.position is None            # cursor dropped (so paint() draws no stale reverse block)
+    assert f.selection_len == 0
+
+
+def test_esc_aborts_and_reselects(app):
+    shared = editable_single_shared("x", 1, begin_x=0, ncols=20, app=app)
+    f = editable_single_line(1, "orig", shared, begin_y=5)
+    f.activate()
+    f.process_key('a')                   # typing replaces the select-all
+    assert f.text == "a" and f.changed is True
+    assert f.process_key('\x1B') is None  # Esc is handled by the field itself
+    assert f.text == "orig"              # aborted to the snapshot
+    assert f.changed is False
+    assert f.position == 0 and f.selection_len == len("orig")   # re-selected: stays focused

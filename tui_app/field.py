@@ -79,6 +79,8 @@ class field_shared:
         f = self.field_class(screen_key, old.text, self, begin_y, paint=False,
                              attr_pair=old.attr_pair, attr=old.attr)
         f.changed = old.changed
+        f.snapshot = old.snapshot       # carry the edit-session baseline across a grow-REFRESH so
+                                        # a later abort() undoes the whole visit, not just post-grow
         f.position = getattr(old, 'position', None)
         f.selection_len = getattr(old, 'selection_len', 0)
         f.paint()
@@ -233,6 +235,8 @@ class field:
                  attr=0, callback=None):
         self.screen_key = screen_key   # screen-assigned id: an index, or (row, col) for table_screen
         self.text = text
+        self.snapshot = text            # value to restore on abort(); == the last accepted/committed
+                                        # value (screens refresh it on accept), or the seed text
         self.field_shared = field_shared
         self.begin_y = begin_y
         self.scroll = 0
@@ -300,6 +304,22 @@ class field:
             self.paint()
         else:
             self.chgat(0, len(self.text), attr)
+
+    def abort(self):
+        r'''Discard the in-progress edit: restore the text to self.snapshot (the value at the start of
+        this edit session == the last accepted/committed value) and repaint with NO highlight.  Because
+        the snapshot IS the accepted baseline, the field is clean afterwards, so `changed` is cleared.
+        Drop the cursor first: paint() ends with set_attrs(), so a stale self.position (left past the
+        now-shorter text by the aborted edit) would otherwise repaint a reverse block after the last
+        char.  The caller re-selects if it wants to: the editable Esc handler calls activate() next,
+        which sets position/selection_len and overlays the select-all via set_attrs (no second paint).
+        '''
+        trace(f"{self.name}.abort(): {self.text=!r} -> {self.snapshot=!r}")
+        self.text = self.snapshot
+        self.changed = False
+        self.position = None
+        self.selection_len = 0
+        self.paint()
 
     def reverse_attr(self, start=0, length=None):
         r'''This takes indexes into self.text.
@@ -641,6 +661,11 @@ class editable:
         if self.position is None:
             trace(f"{self.name}.process_key({key=}): position not set")
             return key
+        if key == '\x1B':                        # Esc: abort this edit session, stay focused
+            trace(f"{self.name}.process_key({key=}): Esc -> abort + re-select")
+            self.abort()
+            self.activate()                      # re-select-all (never leaves; screen keeps focus)
+            return None
         if len(key) == 1 and curses.ascii.isprint(key):
             trace(f"{self.name}.process_key({key=}): {self.position=}, ascii.is_print")
             self.delete_selection(key)
