@@ -1,8 +1,10 @@
                         KEYBOARD                        MOUSE
 popup_menus:
    select               UP, DOWN                        LEFT PRESS and DRAG (outside of menu deselects everything)
-   execute              ENTER. SPACE                    LEFT RELEASE
+                        LEFT, RIGHT (between columns)
+   execute              ENTER. SPACE                    LEFT RELEASE (also single LEFT CLICK on an entry)
    dismiss              ESC                             LEFT RELEASE outside menu
+   (a long list wraps into multiple columns, column-major, sized to fit the screen height)
 popup_messages:
    dismiss              ESC
 

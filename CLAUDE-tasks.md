@@ -936,15 +936,20 @@
        tunable class attr) on row 0 when help_lines is non-empty.  Flush-right was too easy to miss, so
        it is CENTERED in the gap between the title's right edge and the screen's right edge
        (hint_x = title_right + (cols - title_right - len(hint)) // 2).  Visual only, no unit test.
-  2. popup_menu rework (two aspects, do together -- both touch the entry hit-test / select math):
-     a. MOUSE gesture (UI lines 3-5): replace BUTTON1_CLICKED/DOUBLE_CLICKED with LEFT PRESS+DRAG =
-        highlight the entry under the pointer, LEFT RELEASE = execute, RELEASE outside = dismiss, drag
-        outside = deselect.  Clean up the latent if/if/else at tui_base.py:520-526.  (The long-deferred
-        popup-mouse refinement.)  popup_message mouse (left-click dismiss) is already fine.
-     b. MULTI-COLUMN layout (Bruce, 2026-07-21): break a long list of choices into multiple columns
-        (mirror how menu_screen already column-breaks its actions).  Changes the popup draw, select()
-        (an entry is now (col,row), not just a row), key nav (UP/DOWN within a column, maybe LEFT/RIGHT
-        between), and the mouse hit-test (y,x -> col,row -> index) -- which is why it rides with 2a.
+  2. popup_menu rework (two aspects, done together -- both touch the entry hit-test / select math).
+     DONE 2026-07-21 (suite 327); NEEDS Pi drive (mouse gesture + a long menu to see the columns).
+     a. MOUSE gesture (UI lines 3-5): DONE.  LEFT PRESS+DRAG highlights the entry under the pointer
+        (off the menu deselects), LEFT RELEASE on an entry executes / RELEASE off the menu dismisses;
+        a terminal-collapsed BUTTON1_CLICKED is treated as press+release (single click on an entry now
+        EXECUTES it -- was select; double-click no longer needed).  Tracked via a `pressing` flag like
+        field.  Other buttons (wheel) still bubble.  Retired the old CLICKED/DOUBLE_CLICKED + the
+        if/if/else.
+     b. MULTI-COLUMN layout: DONE.  Column-major wrap into as few columns as fit the screen height
+        (max_rows = lines-4), capped by width; short lists stay one column (behavior-neutral).
+        self.selection is a flat index; _cell(i)->(suby,subx) and _index_at(y,x)->index are the
+        mapping.  Key nav: UP/DOWN within a column, LEFT/RIGHT between columns.  select() highlights
+        the flat index's cell.  popup_confirm (2 items) stays single-column, unchanged.
+        New tests/test_popup_menu.py (layout, hit-test, key nav, gesture).
   3. menu_screen.process_mouse (UI line 45): DECISION NEEDED -- UI's mouse column says a single LEFT
      CLICK executes (then DOWN), matching keyboard Enter; today single-click = select, dbl-click =
      execute.  Confirm with Bruce before changing (single click would RUN the action).

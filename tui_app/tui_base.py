@@ -493,42 +493,132 @@ class popup_message(popup):
         return None
 
 class popup_menu(popup):
+    r'''A command menu.  A long list wraps into several columns (column-major: fill a column top-down,
+    then the next), sized to fit the screen height; a short list stays one column.  self.selection is a
+    flat index into self.commands; _cell() maps it to a subwin (y, x) and _index_at() maps a screen
+    (y, x) back to an index.
+    '''
+    col_gap = 2   # blank columns between menu columns when the list wraps into several
+    pressing = False   # True while a left-button drag-select is in progress
+
     def __init__(self, name, screen, commands, cmd_fn, begin_y, begin_x, outside_space='below'):
-        super().__init__(name, screen, begin_y, begin_x,
-                         len(commands), max(len(command) for command in commands),
-                         outside_space)
         self.commands = commands
         self.cmd_fn = cmd_fn
-        for lineno, command in enumerate(commands, 1):
-            self.subwin.addstr(lineno, 2, f"{command:{self.width - 4}}")
-        self.selection = None   # index into self.commands
+        self.n = len(commands)
+        self.col_width = max(len(command) for command in commands)
+        # Column-major layout: wrap into as few columns as fit the screen height, capped by width.
+        max_rows = max(1, screen.lines - 4)                  # popup box needs 2 rows + a margin
+        avail_width = screen.cols - begin_x - 4              # inside the box (2 spacing each side)
+        max_cols = max(1, (avail_width + self.col_gap) // (self.col_width + self.col_gap))
+        ncols = min(max_cols, -(-self.n // max_rows))        # ceil(n / max_rows), capped by width
+        self.rows_per_col = -(-self.n // ncols)              # balance the columns: ceil(n / ncols)
+        self.ncols = -(-self.n // self.rows_per_col)         # drop any now-empty trailing column
+        text_height = self.rows_per_col
+        text_width = self.ncols * self.col_width + (self.ncols - 1) * self.col_gap
+        super().__init__(name, screen, begin_y, begin_x, text_height, text_width, outside_space)
+        for i, command in enumerate(commands):
+            y, x = self._cell(i)
+            self.subwin.addstr(y, x, f"{command:{self.col_width}}")
+        self.selection = None   # flat index into self.commands
         self.select(0)
+
+    def _cell(self, index):
+        r'''(subwin y, x) of command `index` (column-major).'''
+        col, row = divmod(index, self.rows_per_col)
+        return row + 1, 2 + col * (self.col_width + self.col_gap)
+
+    def _index_at(self, y, x):
+        r'''Command index under screen (y, x); None if outside the menu, in a column gap, or past the
+        last command.'''
+        if not self.enclose(y, x):
+            return None
+        row = y - self.begin_y - 1
+        rel_x = x - self.begin_x - 2
+        if not (0 <= row < self.rows_per_col) or rel_x < 0:
+            return None
+        col, within = divmod(rel_x, self.col_width + self.col_gap)
+        if within >= self.col_width or col >= self.ncols:    # in the gap / past the last column
+            return None
+        index = col * self.rows_per_col + row
+        return index if index < self.n else None
 
     def process_key(self, key):
         trace(f"popup_menu.process_key({key=})")
-        if key == 'KEY_DOWN':
-            if self.selection + 1 < self.text_height:
+        if self.selection is None and key in ('KEY_DOWN', 'KEY_UP', 'KEY_LEFT', 'KEY_RIGHT',
+                                              'KEY_ENTER', '\n', ' '):
+            self.select(0)                                   # re-anchor after a mouse deselect
+            return None
+        if key == 'KEY_DOWN':                                # next row in this column
+            if self.selection % self.rows_per_col + 1 < self.rows_per_col \
+                    and self.selection + 1 < self.n:
                 self.select(self.selection + 1)
-        elif key == 'KEY_UP':
-            if self.selection - 1 >= 0:
+        elif key == 'KEY_UP':                                # previous row in this column
+            if self.selection % self.rows_per_col > 0:
                 self.select(self.selection - 1)
+        elif key == 'KEY_RIGHT':                             # same row, next column
+            if self.selection + self.rows_per_col < self.n:
+                self.select(self.selection + self.rows_per_col)
+        elif key == 'KEY_LEFT':                              # same row, previous column
+            if self.selection - self.rows_per_col >= 0:
+                self.select(self.selection - self.rows_per_col)
         elif key == 'KEY_ENTER' or key == '\n' or key == ' ':
             return self.execute()
         else:
             return super().process_key(key)
 
     def process_mouse(self, mouse_event):
+        r'''UI gesture (lines 3-5): LEFT PRESS + DRAG highlights the entry under the pointer (off the
+        menu deselects); LEFT RELEASE on an entry executes it, RELEASE off the menu dismisses.  A quick
+        click a terminal collapses to BUTTON1_CLICKED is treated as press+release at one spot.  Other
+        buttons (wheel, etc.) bubble.
+        '''
         _, x, y, _, bstate = mouse_event
         trace(f"popup_menu.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})")
-        if not self.enclose(y, x) or not (self.begin_y < y < self.begin_y + self.height - 1):
-            return mouse_event
-        if bstate == curses.BUTTON1_CLICKED:
-            self.select(y - self.begin_y - 1)
-        if bstate == curses.BUTTON1_DOUBLE_CLICKED:
-            self.select(y - self.begin_y - 1)
-            return self.execute()
+        # NOTE on the `self.pressing` guards below: ncurses' default mouseinterval (~166 ms) HOLDS a
+        # BUTTON1_PRESSED for that long, hoping to combine it with a following event into a
+        # CLICKED/DOUBLE/TRIPLE.  If the first drag motion arrives inside that window, the press gets
+        # merged away and we never see a standalone BUTTON1_PRESSED -- so we can get REPORT_MOUSE_POSITION
+        # (or the RELEASE) with no preceding press.  It's a race against that timer, hence intermittent.
+        # We guard REPORT and RELEASE on `pressing` so a press we never saw can't drive a phantom
+        # drag/execute (fail-safe: that gesture just does nothing -> re-press).  Empirically, pressing
+        # then pausing briefly before dragging makes the press reliable (the interval elapses, ncurses
+        # emits the standalone PRESSED).  mouseinterval(0) would deliver raw press/release reliably but
+        # KILLS CLICKED/DOUBLE/TRIPLE synthesis, which field.py/table_screen depend on -- so we live
+        # with it.  Refs: https://invisible-island.net/ncurses/man/curs_mouse.3x.html
+        #   https://manpages.debian.org/buster/ncurses-doc/mouseinterval.3ncurses.en.html
+        if bstate == curses.BUTTON1_PRESSED:
+            self.pressing = True
+            self._highlight_or_deselect(self._index_at(y, x))
+            return None
+        if bstate == curses.REPORT_MOUSE_POSITION and self.pressing:
+            self._highlight_or_deselect(self._index_at(y, x))
+            return None
+        if bstate == curses.BUTTON1_RELEASED and self.pressing:  # only finish a press WE started
+            self.pressing = False
+            return self._release_at(y, x)
+        if bstate == curses.BUTTON1_CLICKED:                 # self-contained press+release
+            return self._release_at(y, x)
+        return super().process_mouse(mouse_event)            # wheel / stray release / etc. -> bubble
+
+    def _release_at(self, y, x):
+        r'''Finish the gesture: on an entry -> execute it; off the menu -> dismiss.'''
+        index = self._index_at(y, x)
+        if index is None:
+            self.delete()                                    # off the menu -> dismiss
+            return None
+        self.select(index)
+        return self.execute()                                # on an entry -> run it
+
+    def _highlight_or_deselect(self, index):
+        r'''During a drag: highlight `index` if on an entry, else clear the highlight (off the menu).'''
+        if index is None:
+            if self.selection is not None:
+                y, x = self._cell(self.selection)
+                self.subwin.chgat(y, x, self.col_width, 0)
+                self.subwin.noutrefresh()
+                self.selection = None
         else:
-            return super().process_mouse(mouse_event)
+            self.select(index)
 
     def execute(self):
         trace(f"popup_menu.execute(): {self.selection=}")
@@ -540,17 +630,16 @@ class popup_menu(popup):
         return ans
 
     def select(self, index):
-        r'''index into self.commands
-
-        So first command is 0, last command is self.text_height - 1
-        '''
+        r'''Highlight command `index` (a flat index into self.commands), un-highlighting the old one.'''
         trace(f"popup_menu.select({index=})")
-        assert 0 <= index < self.text_height, \
-           f"popup_menu.select: {index=} out of range {0}-{self.text_height - 1}"
+        assert 0 <= index < self.n, \
+           f"popup_menu.select: {index=} out of range 0-{self.n - 1}"
         if self.selection is not None:
-            self.subwin.chgat(self.selection + 1, 2, self.width - 4, 0)
+            y, x = self._cell(self.selection)
+            self.subwin.chgat(y, x, self.col_width, 0)
         self.selection = index
-        self.subwin.chgat(self.selection + 1, 2, self.width - 4, curses.A_REVERSE)
+        y, x = self._cell(index)
+        self.subwin.chgat(y, x, self.col_width, curses.A_REVERSE)
         self.subwin.noutrefresh()
 
 
