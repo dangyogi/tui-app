@@ -257,7 +257,7 @@ def test_accept_field_invalid_stays_and_messages():
     f = s.fields[0]
     def bad(text):
         raise ValueError("bad value")
-    f.field_shared.validate_fn = bad          # the field validates via field_shared.validate_fn
+    f.field_shared.convert_fn = bad          # accept_field validates via field.convert() (convert_fn)
     f.text = "x"
     f.changed = True
     assert s.accept_field(f) is False
@@ -313,7 +313,7 @@ def test_accept_blanked_field_skips_type_check():
     s = make_row_screen(cols, {"qty": "5"})
     s.draw_body()
     f = s.fields[0]
-    f.field_shared.validate_fn = float          # float("") would raise -- must not be called
+    f.field_shared.convert_fn = float          # float("") would raise -- must not be called
     f.text = ""                                 # blanked (optional field)
     f.changed = True
     assert s.accept_field(f) is True            # empty -> skip type-check, accept

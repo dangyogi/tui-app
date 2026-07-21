@@ -704,7 +704,7 @@ def test_cell_commit_invalid_stays_and_pops_error(columns):
     f = scr.active_field
     f.text = "bad"
     f.changed = True
-    f.field_shared.validate_fn = _raise_value_error
+    f.field_shared.convert_fn = _raise_value_error
     assert scr._commit_edit() is False            # validation failed
     assert scr.popup is not None                   # error popup shown
     assert f.changed                               # still dirty (not written through)
@@ -717,7 +717,7 @@ def test_focus_cell_blocked_by_invalid_commit(columns):
     f = scr.active_field
     f.text = "bad"
     f.changed = True
-    f.field_shared.validate_fn = _raise_value_error
+    f.field_shared.convert_fn = _raise_value_error
     assert scr._focus_cell(2, 1) is False          # moving off the bad cell is blocked
     assert scr.active_field is f                     # focus stays on the bad cell
 

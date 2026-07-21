@@ -290,7 +290,7 @@ class table_screen(tui_base.screen):
         name = self.columns[col].name
         try:
             if field.text.strip():           # empty is a required-check concern, not the converter's
-                field.validate()             # column.validate may raise ValueError
+                field.convert()              # convert_fn (column.validate) may raise ValueError
             self.rows[row].set(name, field.text)   # to_python may also raise ValueError
         except ValueError as exc:
             self._cell_error(str(exc))

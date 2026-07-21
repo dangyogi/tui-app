@@ -974,12 +974,44 @@
 - PHASE 1 (process_mouse sweep) COMPLETE 2026-07-21: items 1 (F1=Help) + 2 (popup_menu) + 3
   (menu_screen click/Tab) done + committed + Pi-driven; item 4 review found no gaps.
 
-- PHASE 2 -- menu_screen overhaul (rough answer/question flow):
-  a. answer input processing: trap + DISPLAY validation errors (the KNOWN BUG below) -- today Enter
-     calls the callback with the raw string with NO validation.
-  b. widen the answer field: ask_question hard-codes entry_len = 5 (menu_screen.py:261) -> too tight;
-     give it more room for inserts (and it now scrolls, so a sensible width + the "<"/">" markers).
-  c. general cleanup of the question/answer path (the Esc-dismiss just landed; the rest needs rework).
+- PHASE 2 -- menu_screen overhaul (DESIGN FINALIZED 2026-07-21; implement in batches, Pi-drive):
+
+  DEFECTS found in the ask_question/answer flow: (1) crash on bad input -- field convert_fn never run
+  on the answer path, so a bare int(s) in the callback raises uncaught; (2) convert_fn hard-coded to
+  int (so the date question was "validated" as int); (3) errors never show -- callbacks do
+  show_error() then clear_message() back-to-back (the remaining half of the KNOWN validation-display
+  bug); (4) run_callback tears the question down BEFORE calling the callback, and each callback
+  re-implements the re-ask dance; (5) entry_len=5 duplicated 3x, too narrow.
+
+  RENAME (confirmed): the FIELD's validate_fn -> convert_fn (it validates AND converts -- csv_app's
+  column.validate does `return self.parse(s)`, i.e. returns the python value / None, raising ValueError).
+  field.validate() -> field.convert().  SCOPE = field only: field_shared.__init__ param + attr,
+  field.convert() + its 2 callers (table_screen._commit_edit, row_screen.accept_field, which only need
+  the raise), ask_question's convert_fn=..., and the tui.py column duck-type doc (note it returns the
+  value).  DO NOT rename table_screen.validate_fn (table-level error-message check), row_screen.validate
+  / global_validate / tui_base.validate (screen-level final checks), or column.validate (csv_app's method
+  -- the field just receives it and stores it as convert_fn).
+
+  DESIGN:
+  a. Validation protocol in the framework.  ask_question(question, callback, default='', convert_fn=str)
+     -- per-question converter.  run_callback: clear_message; value = self.answer.convert() (runs
+     convert_fn, raises ValueError -> show_error, KEEP the question up, don't call the callback); else
+     callback(value) -- the app callback gets the CONVERTED value and may raise ValueError to reject a
+     business-invalid value (e.g. table size not 4-12) -> show_error + keep question; on normal return
+     -> clear_question, return result (next screen/None).  So type + business errors both show a
+     persistent message with the prompt staying open; no crashes; callbacks stop re-implementing
+     show_error/clear_message/re-ask.
+  b. widen answer: class attr answer_width (~12, tunable) replacing the 3 entry_len=5; factor the
+     prompt geometry into one helper (ask_question / clear_question / draw_body share it).  Keep the
+     "<"/">" scroll markers.
+  c. persistent error: stop clearing synchronously; clear at the top of run_callback (message at
+     max_y+2, above the prompt, so no overlap).
+  d. csv-inv-order (cross-repo): update all 6 callbacks -- receive the converted value, raise
+     ValueError for business errors (drop the int(s) + show_error/clear_message/ask_question dance),
+     pass convert_fn (int / a date parser).  Pi-drive after.
+
+  BATCHES: A = field rename (convert_fn + field.convert(), + 2 callers + tui.py doc), behavior-neutral.
+  B = menu_screen protocol + answer_width + geometry de-dup.  C = csv-inv-order callbacks + Pi-drive.
 
 ### KNOWN BUGS (deferred) ###
 

@@ -246,7 +246,7 @@ class row_screen(tui_base.screen):
             return True
         if field.text.strip():                   # only type-check a non-empty value; an empty
             try:                                  # (blanked) field is the required-check's concern,
-                field.validate()                 # not the column converter's (e.g. float('') raises)
+                field.convert()                  # not the column converter's (e.g. float('') raises)
             except ValueError as exc:
                 field.highlight(tui_base.curses.color_pair(self.error_attr))
                 self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))

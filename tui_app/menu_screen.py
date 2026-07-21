@@ -267,7 +267,7 @@ class menu_screen(tui_base.screen):
         x = (self.cols - len(question) - entry_len - 1) // 2  # center question/response
         self.app.stdscr.addstr(y, x, question)
         shared = editable_single_shared("answer", 1, x + len(question) + 1, entry_len, self.app,
-                                        validate_fn=int,
+                                        convert_fn=int,
                                        #alignment="right",
                                         left_placeholder="<", right_placeholder=">")
         self.answer = shared.edit_text(default, begin_y=y, screen_key=1, callback=self.run_callback)

@@ -68,7 +68,7 @@ def test_single_line_shared_read_only(app):
     assert shared.left_placeholder == "<" and shared.right_placeholder == ">"
     assert shared.alignment == "left"
     assert shared.column is col
-    assert shared.validate_fn == col.validate
+    assert shared.convert_fn == col.validate
 
 
 def test_single_line_shared_editable_keeps_alignment(app):
@@ -129,7 +129,7 @@ def test_field_for_read_only(app):
 
 
 def test_edit_text_seeds_editable_with_callback(app):
-    shared = editable_single_shared("answer", 1, begin_x=3, ncols=5, app=app, validate_fn=int)
+    shared = editable_single_shared("answer", 1, begin_x=3, ncols=5, app=app, convert_fn=int)
     cb = lambda s: "CB"
     f = shared.edit_text("hi", begin_y=7, screen_key=1, callback=cb)
     assert isinstance(f, editable)

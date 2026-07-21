@@ -44,14 +44,14 @@ class field_shared:
     # for fields with field_for()/edit_text()/from_field().
     field_class = None
 
-    def __init__(self, name, nlines, begin_x, ncols, app=None, validate_fn=None, alignment="left",
+    def __init__(self, name, nlines, begin_x, ncols, app=None, convert_fn=None, alignment="left",
                  left_placeholder='[...] ', right_placeholder=' [...]', column=None):
         self.name = name
         self.nlines = nlines
         self.begin_x = begin_x
         self.ncols = ncols
         self.app = app     # only used (shared) by field classes below
-        self.validate_fn = validate_fn
+        self.convert_fn = convert_fn   # str -> python value; raises ValueError if invalid (validate+convert)
         self.alignment = alignment
         self.left_placeholder = left_placeholder
         self.right_placeholder = right_placeholder
@@ -272,8 +272,11 @@ class field:
     def app(self):
         return self.field_shared.app
 
-    def validate(self):
-        return self.field_shared.validate_fn(self.text)
+    def convert(self):
+        r'''Return self.text converted to its python value (via field_shared.convert_fn), raising
+        ValueError if invalid.  Callers that only want the validation just ignore the return.
+        '''
+        return self.field_shared.convert_fn(self.text)
 
     def show_cursor(self):
         r'''Redraw the cursor/selection after self.position changed.  Base (and multi_line): no
