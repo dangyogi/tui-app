@@ -1,68 +1,57 @@
                         KEYBOARD                        MOUSE
 popup_menus:
-   select               UP, DOWN                        LEFT PRESS and DRAG (outside of menu deselects everything)
+   select               UP, DOWN                        LEFT DRAG
                         LEFT, RIGHT (between columns)
-   execute              ENTER. SPACE                    LEFT RELEASE (also single LEFT CLICK on an entry)
-   dismiss              ESC                             LEFT RELEASE outside menu
+   execute              ENTER, SPACE                    LEFT RELEASE, LEFT CLICK on an entry
+   dismiss              ESC, DEL, BACKSPACE             LEFT RELEASE outside menu, LEFT CLICK not on entry
    (a long list wraps into multiple columns, column-major, sized to fit the screen height)
 popup_messages:
-   dismiss              ESC
+   dismiss              ESC, DEL, BACKSPACE, ENTER,     LEFT CLICK anywhere on screen
+                        SPACE
 
 base screen:
    add "F1=Help" to first row, right
-   back                 ESC
+   back                 F8
    help                 F1
-   exit app             F? (remove 'q' in screen.run, message if uncommitted changes)
-   abort app            F? again on message box (add callback to popup_message,
-                                                 passes key but doesn't show it on screen)
+   exit/abort app       F12 (y/n message if uncommitted changes for abort/cancel)
 
 field edit:
-   accept               ENTER
+   accept               ENTER (if callback, call callback(text))
    abort (resets text)  ESC
    ins text             any ascii char (also deletes selection)
    del selection        DEL, BACKSPACE
    del char             DEL, BACKSPACE
    move                 LEFT, RIGHT, UP, DOWN           LEFT CLICK
-   select                                               LEFT PRESS and DRAG
+   select                                               LEFT DRAG
    select word                                          LEFT DBL CLICK
    select all                                           LEFT TPL CLICK
 
 table_screen:
-   select               UP, DOWN/ENTER,                 LEFT CLICK
-                        LEFT/BTAB, RIGHT/TAB, 
+   accept edit (if any) UP, DOWN/ENTER, TAB, BTAB       LEFT 1/2/3 CLICK, LEFT PRESSED (forwarded to new field)
+   select new field
    scroll               PGUP, PGDN                      SCROLL WHEEL
    top, bottom          HOME, END
    open screen popup    F10                             RIGHT CLICK (top 2 rows)
    open row popup       F9                              RIGHT CLICK (on row)
-   view, edit           F2
-   delete row           DEL (w/confirmation)
+   view/edit row        F2
+   delete row           F5 (w/confirmation)
    create row           INS
-   start field edit     SPACE, any ascii char           LEFT DBL CLICK (also selects)
-      to capture DEL, LEFT, RIGHT
-      accept edit       ENTER, UP, DOWN (after started)
-      abort edit        ESC (after started)
 
 menu_screen:
-    select              UP, DOWN
-    execute (then DOWN) ENTER, SPACE                    LEFT CLICK
-    action.reset        'r' (temp, will be removed later)
-
-ask_question answer:
-    accept              ENTER
-    abort               ESC
+    select              UP/BTAB, DOWN/TAB
+    execute (then DOWN) ENTER, SPACE                    LEFT CLICK, LEFT DBL CLICK
+    clear err/question  ESC
 
 row_screen:
+    clear message       ESC, else automatic
     back ignored if row changed and not Applied -- no message
-    remove validate button
-    rename Submit button to Apply
-    Cancel does forced back
-    Apply updates, then back
-    select              TAB, BTAB
-    accept field        ENTER, TAB, BTAB
+    accept field        ENTER, TAB, BTAB                ANY outside of field
        does validate
     abort field         ESC (also deselects the field, so second ESC goes back)
+    select              TAB/ENTER, BTAB                 ANY inside of field, forwarded to field
     select button       part of TAB seq
-    execute button      ENTER                           LEFT CLICK
+    execute button      ENTER, SPACE                    LEFT CLICK
+    unselect button     ESC
 
 
 

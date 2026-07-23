@@ -14,19 +14,39 @@ class table_screen(tui_base.screen):
     delete_command = 'Delete'          # row command F5 runs (after confirm) to delete the focused row
     create_command = 'Create'          # table command INS runs to create a new row
     help_lines = [                     # F1 help (base screen.show_help renders it); grows over time
-        "Up / Down .......... move to the previous / next row",
-        "Left / Right ....... move the cursor in the cell",
-        "Tab / Shift-Tab .... next / prev editable cell",
-        "type ............... edit the cell (Enter or Tab commits)",
-        "Esc ................ discard the cell edit",
-        "PgUp / PgDn ........ scroll a page",
-        "Home / End ......... scroll to top / bottom",
-        "Ins / F5 ........... create row / delete focused row",
-        "F2 ................. open the focused row",
-        "F10 / F9 ........... screen menu / row menu",
-        "F8 ................. back",
-        "F12 ................ exit the app",
-        "F1 ................. this help",
+        "                                  Keyboard                Mouse",
+        "Popups:",
+        "  select ........................ UP, DOWN, LEFT, RIGHT",
+        "  run command ................... ENTER, SPACE .......... LEFT DRAG, LEFT CLICK",
+        "  dismiss ....................... ESC, DEL, BACKSPACE ... DRAG outside, LEFT CLICK outside",
+        "",
+        "Cell editing:",
+        "  move cursor within the cell ... LEFT, RIGHT ........... LEFT CLICK",
+        "  select word ........................................... LEFT DOUBLE CLICK",
+        "  select all ............................................ LEFT TRIPLE CLICK",
+        "  select text ........................................... LEFT DRAG-RELEASE",
+        "  delete selection .............. DEL, BACKSPACE",
+        "  delete one char ............... DEL (at cursor), BACKSPACE (left of cursor)",
+        "  insert text ................... type",
+        "  accept changes ................ ENTER, <move out of cell>",
+        "  discard changes ............... ESC",
+        "",
+        "Movement:",
+        "  next, previous row ............ Down/Enter, Up",
+        "  next, prev editable cell ...... Tab, Shift-Tab",
+        "  select cell ........................................... select text in cell",
+        "  scroll a few lines .................................... MOUSE WHEEL",
+        "  scroll a page ................. PgUp, PgDn",
+        "  scroll to top, bottom ......... Home, End",
+        "",
+        "Commands:",
+        "  screen menu, row menu ......... F10, F9 ............... RIGHT CLICK top, RIGHT CLICK row",
+        "  create row .................... Ins",
+        "  delete focused row ............ F5",
+        "  open the focused row .......... F2",
+        "  exit back to prev screen ...... F8",
+        "  exit the app .................. F12",
+        "  this help ..................... F1",
     ]
 
     def __init__(self, table, back=None, validate_fn=None, **select):
@@ -116,8 +136,8 @@ class table_screen(tui_base.screen):
             return mouse_event                       # below the last visible row -> bubble
         for field in self.row_fields[row]:
             if field.enclose(y, x):                  # an editable cell under the pointer
-                if self._focus_cell(row, field.screen_key[1]):   # focus (may block on a bad commit)
-                    self.active_field.process_mouse(mouse_event)  # position cursor / select / drag
+                if self._focus_cell(row, field.screen_key[1]):           # focus (may block on a bad commit)
+                    return self.active_field.process_mouse(mouse_event)  # position cursor / select / drag
                 return None
         self._focus_cell(row, self._default_col())   # not on an editable cell -> focus the row
         return None
@@ -131,39 +151,37 @@ class table_screen(tui_base.screen):
             case 'KEY_F(2)':                    # open the focused row in row_screen (View/Edit)
                 return self._view_edit_focused_row()
             case 'KEY_F(5)':                    # delete the focused row (with y/n confirm)
-                self._confirm_delete_focused_row(); return None
+                return self._confirm_delete_focused_row()
             case 'KEY_F(9)':                    # row menu for the focused row
-                self._open_row_popup_for_focus(); return None
+                return self._open_row_popup_for_focus()
             case 'KEY_F(10)':                   # screen menu (table names, Back, Exit/Abort)
-                self._open_screen_popup(); return None
+                return self._open_screen_popup()
             case 'KEY_IC':                      # Insert -> create a new row (if the table offers it)
                 return self._create_row()
             case 'KEY_DOWN' | 'KEY_ENTER' | '\n':   # down a row (commits the current cell; Enter too)
-                self._move_focus_row(1); return None
+                return self._move_focus_row(1)
             case 'KEY_UP':                      # up a row
-                self._move_focus_row(-1); return None
+                return self._move_focus_row(-1)
             case '\t':                          # next editable cell (wraps rows)
-                self._move_focus_col(1); return None
+                return self._move_focus_col(1)
             case 'KEY_BTAB':                    # previous editable cell
-                self._move_focus_col(-1); return None
+                return self._move_focus_col(-1)
             case 'KEY_NPAGE':                   # Page Down: scroll a page
-                self.scroll_up(self.lines - 3); return None
+                return self.scroll_up(self.lines - 3)
             case 'KEY_PPAGE':                   # Page Up: scroll a page
-                self.scroll_down(self.lines - 3); return None
+                return self.scroll_down(self.lines - 3)
             case 'KEY_HOME':                    # scroll to the top
                 if self.first_row:
-                    self.scroll_down(self.first_row)
+                    return self.scroll_down(self.first_row)
                 return None
             case 'KEY_END':                     # scroll to the bottom
                 rows_left = len(self.rows) - self.first_row
                 if rows_left > self.lines - 2:
-                    self.scroll_up(rows_left - (self.lines - 3))
+                    return self.scroll_up(rows_left - (self.lines - 3))
                 return None
         # Left/Right (cursor), typing, Delete, Esc act on the focused cell
         if self.active_field is not None:
             key = self._cell_key(key)
-            if tui_base.event_handled(key):
-                return key
         return key                              # not handled here -> bubble up
 
     def _open_row_popup(self, row_index, y):
@@ -177,19 +195,21 @@ class table_screen(tui_base.screen):
         trace(f"table_screen._open_row_popup({row_index=}, {y=}): {row=}, {row.row_popup_commands=}")
         self.popup = tui_base.popup_menu(row.human_key(), self, row.row_popup_commands,
                                          partial(row.execute, self), y, 4)
+        return None
 
     def _open_screen_popup(self):
         r'''Open the screen-level popup (table commands + Back/Exit/Abort).  Shared by right-click
         (top rows) and F10.  If a screen popup is already open, leave it in place.
         '''
         if self.popup is not None and self.popup_y is None:
-            return                          # screen popup already open -- keep using it
+            return None                     # screen popup already open -- keep using it
         if self.popup is not None:
             self.popup.delete()             # replace an open row popup
         self.popup_y = None
         trace(f"table_screen._open_screen_popup(): {self.screen_popup_commands=}")
         self.popup = tui_base.popup_menu("Screen", self, self.screen_popup_commands,
                                          self.execute, 1, 4)
+        return None
 
     def _open_row_popup_for_focus(self):
         r'''F9: open the row popup for the focused row.  Focus the top visible row first if nothing is
@@ -223,28 +243,24 @@ class table_screen(tui_base.screen):
         return row.execute(self, self.view_edit_command)
 
     def _confirm_delete_focused_row(self):
-        r'''DEL: pop a y/n confirm to delete the focused row.  Focus the top visible row first if
-        nothing is focused; no-op if the row doesn't offer delete_command or there are no rows.  The
-        actual delete happens in _do_delete (on Yes); focus auto-advances via draw_body restoring the
-        same row index (now the next row).
+        r'''DEL: pop a y/n confirm to delete the focused row.  No-op if the row doesn't offer
+        delete_command or there are no rows.  The actual delete happens in _do_delete (on Yes);
+        focus auto-advances via draw_body restoring the same row index (now the next row).
         '''
-        if not self.rows:
-            return
-        if self.active_field is None:
-            self._move_focus_row(1)             # focus the top visible row
-        if self.active_field is None:
-            return
+        if not self.rows or self.active_field is None:
+            return None
         row_index = self.active_field.screen_key[0]
         row = self.rows[row_index]
         if self.delete_command not in row.row_popup_commands:
             trace(f"table_screen._confirm_delete_focused_row: {self.delete_command!r} not offered")
-            return
+            return None
         if self.popup is not None:
             self.popup.delete()
         self.popup_y = row_index - self.first_row
         y = (row_index - self.first_row) + 2    # screen line of the row
         self.popup = tui_base.popup_confirm(f"Delete {row.human_key()}?", self,
                                             partial(self._do_delete, row_index), y + 1, 4)
+        return None
 
     def _do_delete(self, row_index, choice):
         r'''popup_confirm callback: on 'Yes' run the row's delete command (which usually returns
@@ -271,10 +287,7 @@ class table_screen(tui_base.screen):
         field = self.active_field
         if not field.can_edit:
             return key                          # read-only focused cell: nothing to edit
-        result = field.process_key(key)
-        if tui_base.event_handled(result):
-            return result                       # field handled it (None) or returned a sentinel
-        return key                              # Left/Right at a text edge, etc.: bubble (no-op)
+        return field.process_key(key)
 
     def _commit_edit(self):
         r'''Write the focused cell through to its row if it changed (marking the app changed) and
@@ -345,6 +358,7 @@ class table_screen(tui_base.screen):
                 trace(f"scroll_up: insdelln(-{nlines=})")
                 self.app.stdscr.insdelln(-nlines)
                 self.draw_rows(self.first_row + (self.lines - 2) - nlines, self.lines - nlines)
+        return None
 
     def scroll_down(self, nlines):
         trace(f"scroll_down({nlines})")
@@ -363,6 +377,7 @@ class table_screen(tui_base.screen):
             else:
                 self.app.stdscr.insdelln(nlines)
                 self.draw_rows(self.first_row, 2, nlines)
+        return None
 
     def _reindex_row_fields(self):
         r'''Maintain row_fields after a scroll changed first_row (and insdelln shifted the glyphs):
@@ -434,7 +449,7 @@ class table_screen(tui_base.screen):
         focuses the top (Down) or bottom (Up) visible row.
         '''
         if not self.rows:
-            return
+            return None
         n = len(self.rows)
         if self.active_field is None:
             row = self.first_row if delta > 0 else self._bottom_visible_row()
@@ -450,6 +465,7 @@ class table_screen(tui_base.screen):
                 row = target
                 self._ensure_visible(row)           # normal move: auto-scroll to keep it visible
         self._focus_cell(row, col)
+        return None
 
     def _move_focus_col(self, delta):
         r'''Move cell focus to the previous/next editable cell (delta -1/+1), wrapping to the adjacent
@@ -459,12 +475,12 @@ class table_screen(tui_base.screen):
         (Shift-Tab) editable cell.
         '''
         if not self.rows or not self.editable_cols:
-            return
+            return None
         n = len(self.rows)
         if self.active_field is None:
             col = self.editable_cols[0] if delta > 0 else self.editable_cols[-1]
             self._focus_cell(self.first_row, col)
-            return
+            return None
         row, col = self.active_field.screen_key
         ci = self.editable_cols.index(col) + delta
         if ci < 0:
@@ -478,6 +494,7 @@ class table_screen(tui_base.screen):
         else:
             self._ensure_visible(row)
         self._focus_cell(row, self.editable_cols[ci])
+        return None
 
     def execute(self, command):
         trace(f"table_screen.execute({command=})")

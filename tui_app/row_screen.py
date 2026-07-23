@@ -18,17 +18,28 @@ class row_screen(tui_base.screen):
     button_pair = 0x05         # black on purple: a normal command button
     button_focus_pair = 0x0a   # the button currently holding Tab focus
     help_lines = [             # F1 help (base screen.show_help renders it)
-        "type ............... edit the focused field",
-        "Left / Right ....... move the cursor in the field",
-        "Up / Down .......... move the cursor across wrapped lines",
-        "Tab / Shift-Tab .... next / previous field or button",
-        "Enter .............. accept the field / run the focused button",
-        "Space .............. run the focused button",
-        "click .............. focus a field / run a button",
-        "Esc ................ discard the field edit",
-        "F8 ................. back (blocked while changes are unapplied)",
-        "F12 ................ exit the app",
-        "F1 ................. this help",
+        "                                   Keyboard                       Mouse",
+        "Field editing:",
+        "  move cursor within the field ... LEFT, RIGHT, UP, DOWN ........ LEFT CLICK",
+        "  select word ................................................... LEFT DOUBLE CLICK",
+        "  select all .................................................... LEFT TRIPLE CLICK",
+        "  select text ................................................... LEFT DRAG-RELEASE",
+        "  delete selection ............... DEL, BACKSPACE",
+        "  delete one char ................ DEL (at cursor), BACKSPACE (left of cursor)",
+        "  insert text .................... type",
+        "  accept changes ................. ENTER, <move out of field>",
+        "  discard changes ................ ESC",
+        "",
+        "Movement:",
+        "  next, prev field, button ....... Tab/ENTER, Shift-Tab",
+        "  unselect button ................ ESC",
+        "  select field .................................................. select text in field",
+        "",
+        "Commands:",
+        "  Cancel/Apply ................... ENTER, SPACE when selected ... LEFT CLICK on button",
+        "  exit back to prev screen ....... F8",
+        "  exit the app ................... F12",
+        "  this help ...................... F1",
     ]
 
     master_row = None
@@ -145,11 +156,9 @@ class row_screen(tui_base.screen):
             self.focused_button = None                              # by the field via the forward above)
             return None
         if key in ('\t', 'KEY_ENTER', '\n'):    # forward through the Tab sequence
-            self._tab(1)
-            return None
+            return self._tab(1)
         if key == 'KEY_BTAB':                   # backward through the Tab sequence
-            self._tab(-1)
-            return None
+            return self._tab(-1)
         return key                              # not handled here -> bubble up
 
     def _tab(self, direction):
@@ -158,11 +167,11 @@ class row_screen(tui_base.screen):
         it fails validation).
         '''
         if self.active_field is not None and not self.accept_field(self.active_field):
-            return                              # active field invalid -> stay
+            return None                         # active field invalid -> stay
         items = [('field', f) for f in self.fields if f.can_edit] \
               + [('button', i) for i in range(len(self.row_screen_commands))]
         if not items:
-            return
+            return None
         cur = None
         for j, (kind, obj) in enumerate(items):
             if kind == 'field' and obj is self.active_field:
@@ -180,6 +189,7 @@ class row_screen(tui_base.screen):
             self._focus_field(obj)
         else:
             self._focus_button(obj)
+        return None
 
     def _focus_field(self, field):
         if self.focused_button is not None:

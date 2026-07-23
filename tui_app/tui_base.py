@@ -26,60 +26,111 @@ How input in processed:
       - 'APP_ABORT', screen.run calls sys.exit(1) to exit the app
         (F12 = exit: 'APP_EXIT' when clean, else a Yes/No confirm whose Yes returns 'APP_ABORT')
       - None, screen.run assumes the event was handled and just loops to read more input
-    - table_screen:
+    - table_screen(screen):
       - process_mouse
-          - if a popup is active, call its process_mouse.  If it returns any of the special values above,
-            the value is simply returned to screen.process_mouse, otherwise it proceeds on:
+          - screen.process_mouse
           - on BUTTON3_CLICKED, it creates a new popup.  Table level popup if y < 2, else row popup.
           - on BUTTON4_PRESSED (middle mouse wheel scrolled), scroll_down
           - on BUTTON5_PRESSED (middle mouse wheel scrolled), scroll_up
+          - on LEFT_N_CLICK, LEFT_PRESSED, deactivate active field, activate selected field and field.process_mouse
+          - on DRAG, DRAG-RELEASE, active field.process_mouse, x, y clamped to field boundaries
           - else return the mouse_event for somebody else to handle
       - process_key
-          - if a popup is active, call its process_key.  If it returns any of the special values above,
-            the value is simply returned to screen.process_key, otherwise it proceeds on:
-          - on KEY_UP, scroll_down
-          - on KEY_DOWN, scroll_up
-          - on KEY_PPAGE, scroll_down a whole screen
-          - on KEY_NPAGE, scroll_up a whole screen
-          - on KEY_HOME, scroll to first row
-          - on KEY_END, scroll to last row
-          - else return the key for somebody else to handle
+          - screen.process_key
+          - on F2, select first row no active field, active row.execute('View/Edit')
+          - on F5, popup Delete confirm, on "Yes", row.execute('Delete')
+          - on F9, open row popup
+          - on F10, open screen popup
+          - on INS, self.execute('Create')
+          - on UP, DOWN/ENTER, commit field edit, move_focus_row
+          - on TAB, BTAB, commit field edit, move_focus_col
+          - on NPAGE, PPAGE, scroll_up/down a whole screen
+          - on HOME, scroll to first row
+          - on END, scroll to last row
+          - else if active field, field.process_key
+    - screen
+      - process_mouse
+        - routes to popup
+      - process_key
+        - routes to popup
+        - on F8, execute('Back')
+        - on F1, show help
+        - on F12, self.exit_app (defined in screen)
     - popup
       - process_mouse
-          - if the mouse position is outside of the popup, simply return the mouse_event for somebody else to handle
-          - on BUTTON1_CLICKED, select the indicated menu entry
-          - on BUTTON1_DOUBLE_CLICKED, select the indicated menu entry, then return self.execute()
-          - else return the mouse_event for somebody else to handle
+        (nothing)
       - process_key
-          - on KEY_UP, move the selected menu item up one
-          - on KEY_DOWN, move the selected menu item down one
-          - on KEY_ENTER or '\n' or ' ', return self.execute()
-          - on "\x1B" or 'KEY_DELETE' or 'KEY_DC', call self.delete() and return None
-          - else return the key for somebody else to handle
-    - row_screen:
+        - on ESC, DEL, BACKSPACE, dismiss popup
+    - popup_message(popup)
       - process_mouse
-          - on BUTTON1_CLICKED inside a button, return self.execute(button command)
-          - if any field encloses the mouse position, return field.process_mouse
-          - else return the mouse_event for somebody else to handle
+        - no enclose test
+        - on LEFT_CLICK, dismiss popup
       - process_key
-          - if there is an active_field, return active.process_key
-          - else return the key for somebody else to handle
-    - field:
+        - on ESC, DEL, BACKSPACE, ENTER, SPACE, dismiss popup
+    - popup_menu(popup)
       - process_mouse
-          - on BUTTON1_CLICKED, cancel selection, set position in text
-          - on BUTTON1_DOUBLE_CLICKED, select the current word
-          - on BUTTON1_TRIPLE_CLICKED, select the whole text
-          - on BUTTON1_PRESSED, set self.in_select, return None
-          - on REPORT_MOUSE_POSITION while self.in_select, extend selection
-          - on BUTTON1_RELEASED, unset self.in_select, return None
-          - else return the mouse_event for somebody else to handle
+        - no enclose test
+        - on CLICK-DRAG, select item, unselect if not on item
+        - on DRAG-RELEASE, LEFT_CLICK, select and self.execute(), if not on command dismiss popup
+        - forward to popup.process_mouse
       - process_key
-          - on 'KEY_DELETE' or 'KEY_DC' or 'KEY_BACKSPACE' with selection, delete selection
-          - on 'KEY_DELETE' or 'KEY_DC' without selection, delete char at position
-          - on 'KEY_BACKSPACE' without selection, delete char before position
-          - on curses.ascii.isprint, delete selection (if any), insert char before position
-          - on arrow keys, cancel selection, move position
-          - else return the key for somebody else to handle
+        - on UP, DOWN, move the selected menu item up/down one
+        - on LEFT, RIGHT, move the selected menu item left/right one (multi-column)
+        - on ENTER or SPACE, return self.execute()
+        - else popup.process_key
+    - popup_confirm(popup_menu)
+      - process_key
+        - on 'y' or 'Y', select Yes and self.execute
+        - on 'n' or 'N', select No and self.execute
+        - else popup_menu.process_key
+    - row_screen(screen):
+      - process_mouse
+        - screen.process_mouse
+        - clear message
+        - on LEFT_CLICK inside a button, return self.execute(button name)
+        - if any field encloses the mouse position
+          - if another field is active, accept it
+          - return field.process_mouse
+        - else return the mouse_event for somebody else to handle
+      - process_key
+        - on ESC with message up, clear_message, return None
+        - clear_message
+        - on F8, if unapplied changes display message; else back
+        - try screen.process_key
+        - if active_field, try active_field.process_key
+        - on ENTER, SPACE, when button focused, self.execute(button name)
+        - on ESC when button focused, unfocus button == no field or button selected
+        - on TAB/ENTER, RTAB, select next/prior field/button
+        - else return the key for somebody else to handle
+    - menu_screen(screen):
+      - process_mouse
+        - screen.process_mouse
+        - in answer, answer.process_mouse
+        - on LEFT_CLICK, LEFT_DBL_CLICK on command, execute command
+      - process_key
+        - screen.process_key
+        - on ESC, clears error_message or question
+        - if answer, try answer.process_key
+        - on DOWN/TAB, UP/BTAB, move to next/prior command
+        - on ENTER, SPACE execute selected command
+    - field.editable:
+      - process_mouse
+        - on LEFT_CLICKED, cancel selection, set position in text
+        - on LEFT_DOUBLE_CLICKED, select the current word
+        - on LEFT_TRIPLE_CLICKED, select the whole text
+        - on LEFT-DRAG, make selection for deleting
+        - else return the mouse_event for somebody else to handle
+      - process_key
+        - on ENTER with callback, return callback(text)
+        - if position not set, return key for somebody else to handle
+        - on curses.ascii.isprint, delete selection (if any), insert char before position, skip following keys
+        - on DEL or BACKSPACE with selection, delete selection
+        - on DEL without selection, delete char at position
+        - on BACKSPACE without selection, delete char before position
+        - on arrow keys, cancel selection, move position
+        - on ESC, abort edits, select all, return None
+        - else return the key for somebody else to handle
+        - if grow_if_needed(), return 'REFRESH'; else return None
 
 colors:
     COLOR 0 r=0, g=0, b=0           # black

@@ -2,7 +2,6 @@
 
 import math
 
-from csv_app import action
 from csv_app.trace import trace
 from . import tui_base
 from .field import field_shared, read_only_single_line, editable_single_shared
@@ -42,14 +41,28 @@ class menu_screen(tui_base.screen):
     may_run_pair  = 0x30  # yellow text
     must_run_pair = 0x20  # green text
     help_lines = [        # F1 help (base screen.show_help renders it)
-        "Up/Down, BTab/Tab .. select the previous / next action",
-        "Enter / Space ...... run the selected action",
-        "click .............. run an action",
-        "r .................. reset all actions",
-        "Esc ................ dismiss a question prompt",
-        "F8 ................. back",
-        "F12 ................ exit the app",
-        "F1 ................. this help",
+        "                                     Keyboard                      Mouse",
+        "Answer editing:",
+        "  move cursor within the answer .... LEFT, RIGHT, UP, DOWN ....... LEFT CLICK",
+        "  select word .................................................... LEFT DOUBLE CLICK",
+        "  select all ..................................................... LEFT TRIPLE CLICK",
+        "  select text .................................................... LEFT DRAG-RELEASE",
+        "  delete selection ................. DEL, BACKSPACE",
+        "  delete one char .................. DEL (at cursor), BACKSPACE (left of cursor)",
+        "  insert text ...................... type",
+        "  accept changes ................... ENTER",
+        "  discard changes .................. ESC",
+        "",
+        "Movement:",
+        "  next, prev action ................ DOWN/Tab, UP/Shift-Tab",
+        "",
+        "Commands:",
+        "  run action ....................... ENTER, SPACE ................ LEFT CLICK, LEFT DOUBLE CLICK",
+        "  clear question (aborts action) ... ESC",
+        "  clear error message .............. ESC",
+        "  exit back to prev screen ......... F8",
+        "  exit the app ..................... F12",
+        "  this help ........................ F1",
     ]
 
     def __init__(self, actions, title="Menu", back=None):
@@ -151,10 +164,6 @@ class menu_screen(tui_base.screen):
             if self.active_field is not None:
                 self.clear_message()
                 return self.execute(self.active_field.action)
-        elif key == 'r':
-            self.clear_message()
-            action.reset()
-            return 'REFRESH'
         return key                              # not handled here -> bubble up
 
     def execute(self, action):
