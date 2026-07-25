@@ -45,8 +45,8 @@ from . import tui_base
 from .table_screen import table_screen
 
 
-def start(tables, top_screen=None):
-    app_instance = app(tables, top_screen)
+def start(tables, top_screen=None, testing=False):
+    app_instance = app(tables, top_screen, testing)
     tui_base.curses.wrapper(app_instance.run)
 
 class app:
@@ -54,12 +54,13 @@ class app:
     '''
     screen = None
 
-    def __init__(self, tables, top_screen=None):
+    def __init__(self, tables, top_screen=None, testing=False):
         self.tables = tables
         if top_screen is None:
             self.top_screen = table_screen(self.tables[list(tables.keys())[0]])
         else:
             self.top_screen = top_screen
+        self.testing = testing
         self.changed = False
 
     def run(self, stdscr):   # called by curses.wrapper in start fn
