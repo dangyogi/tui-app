@@ -46,8 +46,15 @@ from .table_screen import table_screen
 
 
 def start(tables, top_screen=None, testing=False):
+    global app_instance
     app_instance = app(tables, top_screen, testing)
     tui_base.curses.wrapper(app_instance.run)
+
+def get_app():
+    return app_instance
+
+def set_changed():
+    app_instance.set_changed()
 
 class app:
     r'''Created and run by `start` fn.
@@ -62,6 +69,9 @@ class app:
             self.top_screen = top_screen
         self.testing = testing
         self.changed = False
+
+    def __repr__(self):
+        return "<app>"
 
     def run(self, stdscr):   # called by curses.wrapper in start fn
         self.stdscr = stdscr

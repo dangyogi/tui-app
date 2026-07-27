@@ -38,6 +38,9 @@ def make_screen(fields):
     s.command_buttons_x = [(0, 5), (9, 13)]
     return s
 
+def test_repr():
+    s = row_screen("foobar")
+    assert f"{s=}" == "s=<row_screen: foobar>"
 
 def test_tab_cycles_fields_then_buttons():
     s = make_screen([fake_field(0, False), fake_field(1, True),

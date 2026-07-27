@@ -236,18 +236,21 @@ class screen:
     help_lines = ()       # subclasses set their key/mouse help; empty -> F1 does nothing
     help_hint = "F1=Help" # drawn top-right on row 0 when help_lines is non-empty (UI line 10)
 
-    def __init__(self, title, back=None):
+    def __init__(self, title, back=None, note=None):
         r'''self.app is set by run.
+
+        note is for caller's use.  screen doesn't use it.
         '''
         self.title = title
         self.back = back     # screen to go back to
+        self.note = note
 
     def init(self):
         r'''Run each time run is called, but _not_ each time the screen is resized.
         '''
         pass
 
-    def __str__(self):
+    def __repr__(self):
         return f"<{self.__class__.__name__}: {self.title}>"
 
     def run(self, app):
@@ -286,9 +289,9 @@ class screen:
                     if key == 'APP_ABORT':
                         sys.exit(1)
                     # (no 'q' quit: exit is F12, or Exit/Abort from the F10 screen menu)
-                app.stdscr.refresh() # does not refresh subwin the first time its called, but gets it the
-                                     # second time(??)
-                                     # fixed by calling noutrefresh() on subwin
+                self.app.stdscr.refresh() # does not refresh subwin the first time its called, but gets it the
+                                          # second time(??)
+                                          # fixed by calling noutrefresh() on subwin
 
     def delete(self):
         r'''Delete subwins.

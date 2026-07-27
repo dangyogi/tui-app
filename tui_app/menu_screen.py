@@ -65,8 +65,8 @@ class menu_screen(tui_base.screen):
         "  this help ........................ F1",
     ]
 
-    def __init__(self, actions, title="Menu", back=None):
-        super().__init__(title, back)
+    def __init__(self, actions, title="Menu", back=None, note=None):
+        super().__init__(title, back, note)
         self.actions = actions
         self.widths = [[0, 0, 0]]   # list of [max_task_number_len, max_step_number_len, max_name_len], one per column
         self.num_columns = 1

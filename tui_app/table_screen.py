@@ -28,6 +28,7 @@ class table_screen(tui_base.screen):
         "  delete selection .............. DEL, BACKSPACE",
         "  delete one char ............... DEL (at cursor), BACKSPACE (left of cursor)",
         "  insert text ................... type",
+        "  select from choices ........... F3",
         "  accept changes ................ ENTER, <move out of cell>",
         "  discard changes ............... ESC",
         "",
@@ -49,10 +50,10 @@ class table_screen(tui_base.screen):
         "  this help ..................... F1",
     ]
 
-    def __init__(self, table, back=None, validate_fn=None, **select):
+    def __init__(self, table, back=None, validate_fn=None, note=None, **select):
         r'''The validate_fn is passed the table and returns an error_message or None.
         '''
-        super().__init__(table.name, back)
+        super().__init__(table.name, back, note)
         self.table = table
         self.first_row = 0         # index into self.rows of top row on screen
         self.validate_fn = validate_fn
@@ -194,7 +195,7 @@ class table_screen(tui_base.screen):
         row = self.rows[row_index]
         trace(f"table_screen._open_row_popup({row_index=}, {y=}): {row=}, {row.row_popup_commands=}")
         self.popup = tui_base.popup_menu(row.human_key(), self, row.row_popup_commands,
-                                         partial(row.execute, self), y, 4)
+                                         partial(row.execute, self.app), y, 4)
         return None
 
     def _open_screen_popup(self):

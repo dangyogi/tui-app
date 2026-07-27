@@ -97,6 +97,8 @@ def screen(columns):
 
 
 def test_editable_cols(screen):
+    assert str(screen) == "<table_screen: Inv>"
+    assert f"{screen=}" == "screen=<table_screen: Inv>"
     assert screen.editable_cols == [1, 3]
 
 

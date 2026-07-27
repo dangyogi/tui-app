@@ -32,7 +32,7 @@ populated consistently by both paints.  wrap() stays on field_shared (with align
 which single_line.paint also uses).
 '''
 
-from .tui_base import curses, bstate_str, trace
+from .tui_base import curses, bstate_str, trace, popup_menu
 
 
 class field_shared:
@@ -670,6 +670,12 @@ class editable:
             self.delete_selection(key)
         else:
             match key:
+                case 'KEY_F(3)' if self.field_shared.column.selection_fn is not None:
+                    trace(f"{self.name}.process_key({key=}): field has selection_fn")
+                    screen = self.app.screen
+                    screen.popup = popup_menu(self.name, screen, self.field_shared.column.selection_fn(),
+                                              self._fill, 2, 4)
+                    return None
                 case 'KEY_DELETE' | 'KEY_DC' | 'KEY_BACKSPACE' if self.selection_len:
                     trace(f"{self.name}.process_key({key=}): {self.position=}, "
                           f"{self.selection_len=}, delete_selection")
@@ -769,6 +775,13 @@ class editable:
         self.set_attrs(reset=True)
         self.position = None
         self.selection_len = 0
+
+    def _fill(self, choice):
+        self.text = choice
+        self.position = 0
+        self.selection_len = len(choice)
+        self.changed = True
+        self.paint()
 
 
 # --- concrete field cells (one BEHAVIOR + one LAYOUT + the base) -----------------------------------

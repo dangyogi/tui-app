@@ -27,6 +27,7 @@ class row_screen(tui_base.screen):
         "  delete selection ............... DEL, BACKSPACE",
         "  delete one char ................ DEL (at cursor), BACKSPACE (left of cursor)",
         "  insert text .................... type",
+        "  select from choices ............ F3",
         "  accept changes ................. ENTER, <move out of field>",
         "  discard changes ................ ESC",
         "",
@@ -45,7 +46,7 @@ class row_screen(tui_base.screen):
     master_row = None
     table = None
 
-    def __init__(self, title, back=None, global_validate=None, callback=None):
+    def __init__(self, title, back=None, global_validate=None, callback=None, note=None):
         r'''
             global_validate is a function that is called on update after individual
             field validates have been done (and all passed).  This function takes
@@ -55,7 +56,7 @@ class row_screen(tui_base.screen):
             callback is a function that is called after a succesful Submit.  It takes no
             arguments and returns None.
         '''
-        super().__init__(title, back)
+        super().__init__(title, back, note)
         self.fields = ()
         self.global_validate = global_validate
         self.callback = callback
