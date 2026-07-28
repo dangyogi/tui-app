@@ -32,8 +32,14 @@ populated consistently by both paints.  wrap() stays on field_shared (with align
 which single_line.paint also uses).
 '''
 
-from .tui_base import curses, bstate_str, trace, popup_menu
+import logging
 
+from .tui_base import curses, bstate_str, popup_menu
+
+
+logger = logging.getLogger("tui-app.field")
+logger_key = logging.getLogger("tui-app.process_key")
+logger_mouse = logging.getLogger("tui-app.process_mouse")
 
 class field_shared:
     max_waste = 10
@@ -94,7 +100,7 @@ class field_shared:
         text = text.rstrip()
         if scroll:
             wtext = self.left_placeholder + text[scroll + len(self.left_placeholder):]
-            trace(f"{self.name}.wrap: {self.left_placeholder=!r}, {wtext=!r}")
+            logger.info(f"{self.name}.wrap: {self.left_placeholder=!r}, {wtext=!r}")
         else:
             wtext = text
         offset = 0
@@ -117,7 +123,7 @@ class field_shared:
                 # last line and next < len(wtext), so more text than will fit on last line.
                 # add self.right_placeholder
                 final_line = wtext[offset: next - len(self.right_placeholder)] + self.right_placeholder
-                trace(f"{self.name}.wrap: {offset=}, {next=}, {final_line=!r}")
+                logger.info(f"{self.name}.wrap: {offset=}, {next=}, {final_line=!r}")
                 yield start_offset + offset, *self.align(final_line)
             elif wtext[next] == ' ':
                 # next hit in between words.
@@ -247,8 +253,8 @@ class field:
         else:
             self.attr_pair = attr_pair
         self.attr = attr
-        trace(f"{self.__class__.__name__}({self.name}).__init__: "
-              f"{text=!r}, {begin_y=}, {self.nlines=}, {self.begin_x=}, {self.ncols=}")
+        logger.info(f"{self.__class__.__name__}({self.name}).__init__: "
+                    f"{text=!r}, {begin_y=}, {self.nlines=}, {self.begin_x=}, {self.ncols=}")
         if paint:
             self.paint()
 
@@ -317,7 +323,7 @@ class field:
         char.  The caller re-selects if it wants to: the editable Esc handler calls activate() next,
         which sets position/selection_len and overlays the select-all via set_attrs (no second paint).
         '''
-        trace(f"{self.name}.abort(): {self.text=!r} -> {self.snapshot=!r}")
+        logger.info(f"{self.name}.abort(): {self.text=!r} -> {self.snapshot=!r}")
         self.text = self.snapshot
         self.changed = False
         self.position = None
@@ -337,8 +343,8 @@ class field:
             if attr is None:
                 current_attr = stdscr.inch(y, x)
                 new_attr = current_attr ^ curses.A_REVERSE
-               #trace(f"{self.name}.reverse_attr({start=}, {length=}): {hex(current_attr)=}, "
-               #      f"{hex(new_attr)=}, {hex(curses.A_REVERSE)=}")
+               #logger.info(f"{self.name}.reverse_attr({start=}, {length=}): {hex(current_attr)=}, "
+               #            f"{hex(new_attr)=}, {hex(curses.A_REVERSE)=}")
             stdscr.chgat(y, x, num, new_attr)
 
     def gen_locations(self, start, end):
@@ -356,8 +362,8 @@ class field:
                 else:
                     # last line has no placeholder
                     next_start = len(self.text) + 1  # + 1 to allow settings attr on the char after end of text
-               #trace(f"{self.name}.gen_locations.gen_line({start=}, {end=}, {lineno=}): "
-               #      f"{this_start=}, {next_start=}")
+               #logger.info(f"{self.name}.gen_locations.gen_line({start=}, {end=}, {lineno=}): "
+               #            f"{this_start=}, {next_start=}")
                 if this_start < end and next_start > start:
                     skip = 0 if lineno or not self.scroll else len(self.field_shared.left_placeholder)
                     start_x = max(skip, start - this_start)
@@ -365,14 +371,14 @@ class field:
                     # never run past the field's own width: the append cursor (next_start = len+1) on
                     # an exactly-full line would otherwise land one column past ncols (curses ERR).
                     end_x = min(end_x, self.ncols - self.pads[lineno])
-                   #trace(f"{self.name}.gen_locations.gen_line: {skip=}, {start_x=}, {end_x=}")
+                   #logger.info(f"{self.name}.gen_locations.gen_line: {skip=}, {start_x=}, {end_x=}")
                     if end_x > skip and end_x > start_x:
                         yield self.begin_y + lineno, self.begin_x + self.pads[lineno] + start_x, \
                               end_x - start_x
 
-        trace(f"{self.name}.gen_locations({start=}, {end=})")
+        logger.info(f"{self.name}.gen_locations({start=}, {end=})")
         for lineno in range(self.nlines):
-           #trace(f"{self.name}.gen_locations: calling gen_line({lineno=})")
+            logger.debug(f"{self.name}.gen_locations: calling gen_line({lineno=})")
             yield from gen_line(lineno)
 
     def get_lineno(self, index):
@@ -429,7 +435,7 @@ class field:
                 skip = len(self.field_shared.left_placeholder)
                 if x <= skip:
                     ans = start_x + skip
-                   #trace(f"{self.name}.to_index({y=}, {x=}) -> {ans}")
+                   #logger.debug(f"{self.name}.to_index({y=}, {x=}) -> {ans}")
                     return ans
             if y + 1 < self.nlines:
                 if self.starts[y + 1] is not None:
@@ -443,7 +449,7 @@ class field:
             ans = start_x + max(0, x - self.pads[y])
             if ans >= end_x:
                 ans = max(0, end_x - 1)   # a click past the text clamps to the last char, or 0 if empty
-       #trace(f"{self.name}.to_index({y=}, {x=}) -> {ans}")
+       #logger.debug(f"{self.name}.to_index({y=}, {x=}) -> {ans}")
         return ans
 
 
@@ -560,13 +566,13 @@ class editable:
     in_select = False
 
     def get_text(self):
-       #trace(f"{self.name}.get_text() -> {self.text!r}")
+       #logger.debug(f"{self.name}.get_text() -> {self.text!r}")
         return self.text
 
     def enclose(self, y, x):
         ans = self.begin_y <= y < self.begin_y + self.nlines and \
               self.begin_x <= x < self.begin_x + self.ncols
-       #trace(f"{self.name}.enclose({y=}, {x=}) -> {ans}")
+       #logger.debug(f"{self.name}.enclose({y=}, {x=}) -> {ans}")
         return ans
 
     def set_attrs(self, reset=False):
@@ -588,7 +594,7 @@ class editable:
                     self.chgat(self.position + self.selection_len, abs(self.selection_len), attr)
 
     def set_position(self, index):
-       #trace(f"{self.name}.set_position({index=})")
+       #logger.debug(f"{self.name}.set_position({index=})")
         self.set_attrs(reset=True)
         self.position = index
         self.selection_len = 0
@@ -605,10 +611,10 @@ class editable:
         '''
         length = end - start   # negative, if selecting to the left
         if start == self.position and length == self.selection_len:
-           #trace(f"{self.name}.set_selection({start=}, {end=}): no change!")
+           #logger.debug(f"{self.name}.set_selection({start=}, {end=}): no change!")
            pass
         else:
-           #trace(f"{self.name}.set_selection({start=}, {end=})")
+           #logger.debug(f"{self.name}.set_selection({start=}, {end=})")
             self.set_attrs(reset=True)
             self.position = start
             self.selection_len = length
@@ -624,66 +630,66 @@ class editable:
 
         match bstate:
             case curses.BUTTON1_CLICKED:
-                trace(f"{self.name}.process_mouse({y=}, {x=}): BUTTON1_CLICKED")
+                logger_mouse.info(f"{self.name}.process_mouse({y=}, {x=}): BUTTON1_CLICKED")
                 self.set_position(index)
             case curses.BUTTON1_DOUBLE_CLICKED:
                 if index >= len(self.text) or self.text[index] == ' ':
-                    trace(f"{self.name}.process_mouse({y=}, {x=}): "
-                          f"BUTTON1_DOUBLE_CLICKED on space / empty: position only")
+                    logger_mouse.info(f"{self.name}.process_mouse({y=}, {x=}): "
+                                      f"BUTTON1_DOUBLE_CLICKED on space / empty: position only")
                     self.set_position(index)
                 else:
-                    trace(f"{self.name}.process_mouse({y=}, {x=}): BUTTON1_DOUBLE_CLICKED")
+                    logger_mouse.info(f"{self.name}.process_mouse({y=}, {x=}): BUTTON1_DOUBLE_CLICKED")
                     start = self.field_shared.start_of_word(self.text, index)
                     end = self.field_shared.end_of_word(self.text, index)
                     while self.text[end] in ',.;':
                         end -= 1
                     self.set_selection(start, end + 1)
             case curses.BUTTON1_TRIPLE_CLICKED:
-                trace(f"{self.name}.process_mouse({y=}, {x=}): BUTTON1_TRIPLE_CLICKED")
+                logger_mouse.info(f"{self.name}.process_mouse({y=}, {x=}): BUTTON1_TRIPLE_CLICKED")
                 self.set_selection(0, len(self.text))
             case curses.BUTTON1_PRESSED:
-                trace(f"{self.name}.process_mouse({y=}, {x=}): {self.in_select=} BUTTON1_PRESSED")
+                logger_mouse.info(f"{self.name}.process_mouse({y=}, {x=}): {self.in_select=} BUTTON1_PRESSED")
                 self.set_position(index)
                 self.in_select = True
             case curses.REPORT_MOUSE_POSITION if self.in_select:
-                trace(f"{self.name}.process_mouse({y=}, {x=}): {self.in_select=} REPORT_MOUSE_POSITION")
+                logger_mouse.info(f"{self.name}.process_mouse({y=}, {x=}): {self.in_select=} REPORT_MOUSE_POSITION")
                 self.extend_selection(index)
             case curses.BUTTON1_RELEASED if self.in_select:
-                trace(f"{self.name}.process_mouse({y=}, {x=}): {self.in_select=} BUTTON1_RELEASED")
+                logger_mouse.info(f"{self.name}.process_mouse({y=}, {x=}): {self.in_select=} BUTTON1_RELEASED")
                 self.extend_selection(index)
                 self.in_select = False
             case _:
-                trace(f"{self.name}.process_mouse({y=}, {x=}): {self.in_select=} "
-                      f"unknown bstate={bstate_str(bstate)}")
+                logger_mouse.info(f"{self.name}.process_mouse({y=}, {x=}): {self.in_select=} "
+                                  f"unknown bstate={bstate_str(bstate)}")
                 return mouse_event
         return None
 
     def process_key(self, key):
-        trace(f"{self.name}.process_key({key=}): {self.callback=}")
+        logger_key.info(f"{self.name}.process_key({key=}): {self.callback=}")
         if (key == 'KEY_ENTER' or key == '\n') and self.callback is not None:
             return self.callback(self.get_text())
         if self.position is None:
-            trace(f"{self.name}.process_key({key=}): position not set")
+            logger_key.info(f"{self.name}.process_key({key=}): position not set")
             return key
         if len(key) == 1 and curses.ascii.isprint(key):
-            trace(f"{self.name}.process_key({key=}): {self.position=}, ascii.is_print")
+            logger_key.info(f"{self.name}.process_key({key=}): {self.position=}, ascii.is_print")
             self.delete_selection(key)
         else:
             match key:
                 case 'KEY_F(3)' if self.field_shared.column.selection_fn is not None:
-                    trace(f"{self.name}.process_key({key=}): field has selection_fn")
+                    logger_key.info(f"{self.name}.process_key({key=}): field has selection_fn")
                     screen = self.app.screen
                     screen.popup = popup_menu(self.name, screen, self.field_shared.column.selection_fn(),
                                               self._fill, 2, 4)
                     return None
                 case 'KEY_DELETE' | 'KEY_DC' | 'KEY_BACKSPACE' if self.selection_len:
-                    trace(f"{self.name}.process_key({key=}): {self.position=}, "
-                          f"{self.selection_len=}, delete_selection")
+                    logger_key.info(f"{self.name}.process_key({key=}): {self.position=}, "
+                                    f"{self.selection_len=}, delete_selection")
                     self.delete_selection()
                 case 'KEY_DELETE' | 'KEY_DC' if not self.selection_len and self.position < len(self.text):
                     # delete char at self.position
-                    trace(f"{self.name}.process_key({key=}): {self.position=}, "
-                          f"no selection, delch at cursor")
+                    logger_key.info(f"{self.name}.process_key({key=}): {self.position=}, "
+                                    f"no selection, delch at cursor")
                     self.delete(1, self.position)  # erases all attrs
                     self.set_attrs()
                 case 'KEY_BACKSPACE' if not self.selection_len and self.position > 0:
@@ -694,33 +700,33 @@ class editable:
                 case 'KEY_UP' if self.get_lineno(self.position) > 0:
                     new_y = self.get_lineno(self.position) - 1
                     x = self.get_col(self.position)
-                    trace(f"{self.name}.process_key({key=}): "
-                          f"{self.position=}, move to {new_y=}, {x=}")
+                    logger_key.info(f"{self.name}.process_key({key=}): "
+                                    f"{self.position=}, move to {new_y=}, {x=}")
                     self.set_position(self.to_index(new_y + self.begin_y, x + self.begin_x))
                 case 'KEY_DOWN' if self.get_lineno(self.position) + 1 < self.nlines:
                     new_y = self.get_lineno(self.position) + 1
                     x = self.get_col(self.position)
-                    trace(f"{self.name}.process_key({key=}): "
-                          f"{self.position=}, move to {new_y=}, {x=}")
+                    logger_key.info(f"{self.name}.process_key({key=}): "
+                                    f"{self.position=}, move to {new_y=}, {x=}")
                     self.set_position(self.to_index(new_y + self.begin_y, x + self.begin_x))
                 case 'KEY_LEFT' if self.position > 0:
-                    trace(f"{self.name}.process_key({key=}): {self.position=}")
+                    logger_key.info(f"{self.name}.process_key({key=}): {self.position=}")
                     self.set_position(self.position - 1)
                 case 'KEY_RIGHT' if self.position < len(self.text):
-                    trace(f"{self.name}.process_key({key=}): "
-                          f"{self.position=}, {len(self.text)=}")
+                    logger_key.info(f"{self.name}.process_key({key=}): "
+                                    f"{self.position=}, {len(self.text)=}")
                     self.set_position(self.position + 1)
                 case '\x1B':                             # Esc: abort this edit session, stay focused
-                    trace(f"{self.name}.process_key({key=}): Esc -> abort + re-select")
+                    logger_key.info(f"{self.name}.process_key({key=}): Esc -> abort + re-select")
                     self.abort()
                     self.activate()                      # re-select-all (never leaves; screen keeps focus)
                     return None
                 case _:
-                    trace(f"{self.name}.process_key({key=}): unknown key")
+                    logger_key.info(f"{self.name}.process_key({key=}): unknown key")
                     return key
         if self.grow_if_needed():
             # the edit needs another line -> let the screen re-lay-out this (taller) field
-            trace(f"{self.name}.process_key({key=}): grow -> REFRESH")
+            logger_key.info(f"{self.name}.process_key({key=}): grow -> REFRESH")
             return 'REFRESH'
         return None
 
@@ -742,7 +748,7 @@ class editable:
         if last >= self.position:
             last += 1
         self.set_selection(self.position, last)
-        trace(f"{self.name}.extend_selection({last=}): {self.position=}, {self.selection_len=}")
+        logger.info(f"{self.name}.extend_selection({last=}): {self.position=}, {self.selection_len=}")
 
     def delete_selection(self, insch=''):
         if not self.selection_len:
@@ -754,7 +760,7 @@ class editable:
                 pos = self.position
             else:
                 pos = self.position + self.selection_len
-            trace(f"{self.name}.delete_selection(): {pos=}, {self.selection_len=}")
+            logger.info(f"{self.name}.delete_selection(): {pos=}, {self.selection_len=}")
             self.delete(abs(self.selection_len), pos, insch)
             if insch:
                 self.set_position(pos + 1)    # a char replaced the selection -> cursor after it

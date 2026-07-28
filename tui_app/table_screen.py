@@ -1,11 +1,16 @@
 # table_screen.py
 
 from functools import partial
+import logging
 
-from csv_app.trace import trace
 from . import tui_base
 from .field import single_line_shared
 
+
+logger = logging.getLogger('tui-app.table_screen')
+logger_execute = logging.getLogger('tui-app.execute')
+logger_key = logging.getLogger("tui-app.process_key")
+logger_mouse = logging.getLogger("tui-app.process_mouse")
 
 class table_screen(tui_base.screen):
     scroll_amount = 3
@@ -75,12 +80,12 @@ class table_screen(tui_base.screen):
     def init(self):
         r'''Run each time run is called, but _not_ each time the screen is resized.
         '''
-        trace(f"table_screen.init({self.table.name=})")
+        logger.info(f"table_screen.init({self.table.name=})")
         self.columns = self.table.columns
         # indexes (into self.columns) of columns a user can focus/edit; read-only and calculated
         # columns are never focusable.  Consumed by cell-focus navigation in later batches.
         self.editable_cols = [i for i, column in enumerate(self.columns) if column.can_edit]
-        trace(f"table_screen.init: {self.editable_cols=}")
+        logger.info(f"table_screen.init: {self.editable_cols=}")
 
     def validate(self):
         if self.validate_fn is not None:
@@ -96,7 +101,7 @@ class table_screen(tui_base.screen):
             return mouse_event
         _, x, y, _, bstate = mouse_event
         curses = tui_base.curses
-        trace(f"table_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        logger_mouse.info(f"table_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if bstate == curses.BUTTON3_CLICKED:
             if y >= 2:
                 self._open_row_popup(self.first_row + (y - 2), y + 1)   # row popup below the row
@@ -147,7 +152,7 @@ class table_screen(tui_base.screen):
         key = super().process_key(key)          # popup routing + common keys (F8 Back, F1 help)
         if tui_base.event_handled(key):
             return key
-        trace(f"table_screen.process_key({key=})")
+        logger_key.info(f"table_screen.process_key({key=})")
         match key:                              # screen navigation (F1/F8 handled by base screen)
             case 'KEY_F(2)':                    # open the focused row in row_screen (View/Edit)
                 return self._view_edit_focused_row()
@@ -193,7 +198,7 @@ class table_screen(tui_base.screen):
             self.popup.delete()
         self.popup_y = row_index - self.first_row
         row = self.rows[row_index]
-        trace(f"table_screen._open_row_popup({row_index=}, {y=}): {row=}, {row.row_popup_commands=}")
+        logger.info(f"table_screen._open_row_popup({row_index=}, {y=}): {row=}, {row.row_popup_commands=}")
         self.popup = tui_base.popup_menu(row.human_key(), self, row.row_popup_commands,
                                          partial(row.execute, self.app), y, 4)
         return None
@@ -207,7 +212,7 @@ class table_screen(tui_base.screen):
         if self.popup is not None:
             self.popup.delete()             # replace an open row popup
         self.popup_y = None
-        trace(f"table_screen._open_screen_popup(): {self.screen_popup_commands=}")
+        logger.info(f"table_screen._open_screen_popup(): {self.screen_popup_commands=}")
         self.popup = tui_base.popup_menu("Screen", self, self.screen_popup_commands,
                                          self.execute, 1, 4)
         return None
@@ -239,7 +244,7 @@ class table_screen(tui_base.screen):
             return None
         row = self.rows[self.active_field.screen_key[0]]
         if self.view_edit_command not in row.row_popup_commands:
-            trace(f"table_screen._view_edit_focused_row: {self.view_edit_command!r} not offered by row")
+            logger.info(f"table_screen._view_edit_focused_row: {self.view_edit_command!r} not offered by row")
             return None
         return row.execute(self, self.view_edit_command)
 
@@ -253,7 +258,7 @@ class table_screen(tui_base.screen):
         row_index = self.active_field.screen_key[0]
         row = self.rows[row_index]
         if self.delete_command not in row.row_popup_commands:
-            trace(f"table_screen._confirm_delete_focused_row: {self.delete_command!r} not offered")
+            logger.info(f"table_screen._confirm_delete_focused_row: {self.delete_command!r} not offered")
             return None
         if self.popup is not None:
             self.popup.delete()
@@ -277,7 +282,7 @@ class table_screen(tui_base.screen):
         '''
         if self.create_command in self.table.screen_popup_commands:
             return self.execute(self.create_command)
-        trace(f"table_screen._create_row: {self.create_command!r} not offered by table")
+        logger.info(f"table_screen._create_row: {self.create_command!r} not offered by table")
         return None
 
     def _cell_key(self, key):
@@ -334,35 +339,35 @@ class table_screen(tui_base.screen):
                 try:
                     value = self.rows[row].get(self.columns[j].name)
                 except Exception as exc:
-                    trace(f"table_screen._recompute_row({row=}): {self.columns[j].name}: "
-                          f"{type(exc).__name__}: {exc} -> blank")
+                    logger.info(f"table_screen._recompute_row({row=}): {self.columns[j].name}: "
+                                f"{type(exc).__name__}: {exc} -> blank")
                     value = ''
                 if value != f.text:
                     f.text = value
                     f.paint()
 
     def scroll_up(self, nlines):
-        trace(f"scroll_up({nlines})")
+        logger.info(f"scroll_up({nlines})")
         if len(self.rows) - self.first_row - nlines < self.lines - 3:
             first_row = len(self.rows) - (self.lines - 3)
             nlines = first_row - self.first_row
-            trace(f"adjusted {nlines=}")
+            logger.info(f"adjusted {nlines=}")
         if nlines > 0:
             self.first_row += nlines
             self._reindex_row_fields()
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
-                trace(f"scroll_up: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
+                logger.info(f"scroll_up: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
                 self.app.stdscr.insdelln(-(self.lines - 2))
                 self.draw_rows(self.first_row)
             else:
-                trace(f"scroll_up: insdelln(-{nlines=})")
+                logger.info(f"scroll_up: insdelln(-{nlines=})")
                 self.app.stdscr.insdelln(-nlines)
                 self.draw_rows(self.first_row + (self.lines - 2) - nlines, self.lines - nlines)
         return None
 
     def scroll_down(self, nlines):
-        trace(f"scroll_down({nlines})")
+        logger.info(f"scroll_down({nlines})")
         if self.first_row - nlines < 0:
             first_row = 0
             nlines = self.first_row
@@ -372,7 +377,7 @@ class table_screen(tui_base.screen):
             self._reindex_row_fields()
             self.app.stdscr.move(2, 0)
             if nlines > self.lines - 2:
-                trace(f"scroll_down: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
+                logger.info(f"scroll_down: {nlines=} too great, clear whole screen insdelln({-(self.lines - 2)})")
                 self.app.stdscr.insdelln(-(self.lines - 2))
                 self.draw_rows(self.first_row)
             else:
@@ -397,7 +402,7 @@ class table_screen(tui_base.screen):
         # if the focused cell's row scrolled off-screen, drop focus (its row is gone from row_fields)
         if self.active_field is not None and self.active_field.screen_key[0] not in self.row_fields:
             self.active_field = None
-        trace(f"_reindex_row_fields: keys now {sorted(self.row_fields)}, {self.first_row=}")
+        logger.info(f"_reindex_row_fields: keys now {sorted(self.row_fields)}, {self.first_row=}")
 
     def _focus_cell(self, row, col):
         r'''Focus the cell at (row, col) -- col is 0 for a read-only table.  Commits the previously
@@ -498,20 +503,24 @@ class table_screen(tui_base.screen):
         return None
 
     def execute(self, command):
-        trace(f"table_screen.execute({command=})")
-       #match command:
-       #    case 'Cancel':
-        trace(f"table_screen.execute: forwarding to table")
+        logger_execute.info(f"table_screen.execute({command=})")
+        if command == 'Back':
+            if self._commit_edit():
+                logger_execute.info(f"table_screen.execute: _commit_edit worked -> {self.back=}")
+                return self.back
+            logger_execute.info(f"table_screen.execute: _commit_edit failed -> None")
+            return None
+        logger_execute.info(f"table_screen.execute: forwarding to table")
         ans = self.table.execute(self, command)
         if ans == 'Continue':
-            trace(f"table_screen.execute: forwarding to base screen class")
+            logger_execute.info(f"table_screen.execute: forwarding to base screen class")
             ans = super().execute(command)
-        trace(f"table_screen.execute -> {ans}")
+        logger_execute.info(f"table_screen.execute -> {ans}")
         return ans
 
     def draw_body(self):
         self.rows = self.table.get_rows(self.app, **self.select)
-        trace(f"draw_body(): {len(self.rows)=}")
+        logger.info(f"draw_body(): {len(self.rows)=}")
         # remember the focused cell so it survives a full redraw (resize, or returning from a row
         # form / popup); restored after the fields are rebuilt, if that row is still on screen
         focus_key = self.active_field.screen_key if self.active_field is not None else None
@@ -541,9 +550,9 @@ class table_screen(tui_base.screen):
             self.field_shareds.append(single_line_shared(column, name, begin_x, max_len, self.app))
             begin_x += max_len + 1
         self.width = begin_x - 1
-        trace(f"table_screen.draw_body({self.table.name=}, {self.width=})")
+        logger.info(f"table_screen.draw_body({self.table.name=}, {self.width=})")
         for col, max_len in zip(column_names, max_lens):
-            trace(f"{col=}, {max_len=}")
+            logger.info(f"{col=}, {max_len=}")
         values = [f"{name:<{max_len}}" if column.alignment == 'left' else f"{name:>{max_len}}"
                   for column, name, max_len
                    in zip(self.columns, column_names, max_lens)]
@@ -566,7 +575,7 @@ class table_screen(tui_base.screen):
     def draw_rows(self, first_row=0, first_line=2, nlines=None):
         if nlines is None:
             nlines = self.lines - first_line
-        trace(f"draw_rows({first_row=}, {first_line=}, {nlines=})")
+        logger.info(f"draw_rows({first_row=}, {first_line=}, {nlines=})")
         for lineno, row in enumerate(self.rows[first_row:], first_line):
             if lineno - first_line == nlines:
                 break
@@ -575,5 +584,5 @@ class table_screen(tui_base.screen):
             for col, shared in enumerate(self.field_shareds):
                 fields.append(shared.field_for(row, begin_y=lineno, screen_key=(row_index, col)))
             self.row_fields[row_index] = fields
-        trace(f"draw_rows: row_fields keys now {sorted(self.row_fields)}")
+        logger.info(f"draw_rows: row_fields keys now {sorted(self.row_fields)}")
 

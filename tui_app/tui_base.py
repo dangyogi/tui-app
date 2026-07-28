@@ -154,10 +154,15 @@ colors:
 import sys
 import curses
 import curses.ascii
-from csv_app.trace import trace
+import logging
 
 
-__all__ = "curses init_screen bstate_str screen popup trace".split()
+logger = logging.getLogger('tui-app.tui_base')
+logger_execute = logging.getLogger('tui-app.execute')
+logger_key = logging.getLogger("tui-app.process_key")
+logger_mouse = logging.getLogger("tui-app.process_mouse")
+
+__all__ = "curses init_screen bstate_str screen popup".split()
 
 def init_colors():
     r'''Loads colors as follows:
@@ -377,14 +382,14 @@ class screen:
             field.activate()
 
     def execute(self, command):
-        trace(f"screen.execute({command=})")
+        logger_execute.info(f"screen.execute({command=})")
         match command:
             case 'Back':
-                trace("screen.execute: Back validating table")
+                logger_execute.info("screen.execute: Back validating table")
                 if self.validate():
-                    trace(f"screen.execute: passed validate -> {self.back=}")
+                    logger_execute.info(f"screen.execute: passed validate -> {self.back=}")
                     return self.back
-                trace(f"screen.execute: failed validate -> None")
+                logger_execute.info(f"screen.execute: failed validate -> None")
                 return None
         return self.app.execute(command)
 
@@ -393,7 +398,7 @@ class screen:
         '''
         self.lines = curses.LINES
         self.cols = curses.COLS
-        trace(f"draw(): {self.lines=}, {self.cols=}")
+        logger.info(f"draw(): {self.lines=}, {self.cols=}")
         if self.width is None:
             title_x = (self.cols - len(self.title)) // 2   # center title
         else:
@@ -444,8 +449,8 @@ class popup:
         self.height = 2 + text_height
         self.width = 4 + max(len(name), text_width)  # includes box and inside spacing
 
-        trace(f"popup.__init__({name=}, {begin_y=}, {begin_x=}, {text_height=}, {text_width=}): "
-              f"{self.height=}, {self.width=}")
+        logger.info(f"popup.__init__({name=}, {begin_y=}, {begin_x=}, {text_height=}, {text_width=}): "
+                    f"{self.height=}, {self.width=}")
 
         assert 1 <= begin_y, f"popup.__init__({name=}) {begin_y=} < 1"
         assert 1 <= begin_x <= screen.cols - self.width, \
@@ -478,8 +483,8 @@ class popup:
         else:
             self.saved_width = self.width + 2
 
-        trace(f"popup.__init__: {self.begin_y=}, {self.begin_x=}, "
-              f"{self.saved_y=}, {self.saved_x=}, {self.saved_height=}, {self.saved_width=})")
+        logger.info(f"popup.__init__: {self.begin_y=}, {self.begin_x=}, "
+                    f"{self.saved_y=}, {self.saved_x=}, {self.saved_height=}, {self.saved_width=})")
 
         self.saved_chars = [[screen.app.stdscr.inch(line, col)
                              for col in range(self.saved_x, self.saved_x + self.saved_width)]
@@ -498,7 +503,7 @@ class popup:
        #self.subwin.chgat(0, 0, self.width, self.border_at)
 
     def process_key(self, key):
-        trace(f"popup.process_key({key=})")
+        logger_key.info(f"popup.process_key({key=})")
         if key == "\x1B" or key == 'KEY_DELETE' or key == 'KEY_DC':
             self.delete()
         else:
@@ -511,7 +516,7 @@ class popup:
         return self.subwin.enclose(y, x)
 
     def delete(self):
-        trace(f"popup.delete()")
+        logger.info(f"popup.delete()")
         if self.subwin is not None:
             del self.subwin
             self.subwin = None
@@ -598,7 +603,7 @@ class popup_menu(popup):
         return index if index < self.n else None
 
     def process_key(self, key):
-        trace(f"popup_menu.process_key({key=})")
+        logger_key.info(f"popup_menu.process_key({key=})")
         if self.selection is None and key in ('KEY_DOWN', 'KEY_UP', 'KEY_LEFT', 'KEY_RIGHT',
                                               'KEY_ENTER', '\n', ' '):
             self.select(0)                                   # re-anchor after a mouse deselect
@@ -628,7 +633,7 @@ class popup_menu(popup):
         buttons (wheel, etc.) bubble.
         '''
         _, x, y, _, bstate = mouse_event
-        trace(f"popup_menu.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})")
+        logger_mouse.info(f"popup_menu.process_mouse({y=}, {x=}, bstate={bstate_str(bstate)})")
         # NOTE on the `self.pressing` guards below: ncurses' default mouseinterval (~166 ms) HOLDS a
         # BUTTON1_PRESSED for that long, hoping to combine it with a following event into a
         # CLICKED/DOUBLE/TRIPLE.  If the first drag motion arrives inside that window, the press gets
@@ -676,17 +681,17 @@ class popup_menu(popup):
             self.select(index)
 
     def execute(self):
-        trace(f"popup_menu.execute(): {self.selection=}")
+        logger_execute.info(f"popup_menu.execute(): {self.selection=}")
         command = self.commands[self.selection]
-        trace(f"popup_menu.execute(): {command=}")
+        logger_execute.info(f"popup_menu.execute(): {command=}")
         self.delete()
         ans = self.cmd_fn(command)
-        trace(f"popup_menu.execute() -> {ans}")
+        logger_execute.info(f"popup_menu.execute() -> {ans}")
         return ans
 
     def select(self, index):
         r'''Highlight command `index` (a flat index into self.commands), un-highlighting the old one.'''
-        trace(f"popup_menu.select({index=})")
+        logger.info(f"popup_menu.select({index=})")
         assert 0 <= index < self.n, \
            f"popup_menu.select: {index=} out of range 0-{self.n - 1}"
         if self.selection is not None:

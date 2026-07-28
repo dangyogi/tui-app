@@ -1,11 +1,16 @@
 # row_screen.py
 
 import math
+import logging
 
-from csv_app.trace import trace
 from . import tui_base
 from .field import multi_line_shared
 
+
+logger = logging.getLogger('tui-app.row_screen')
+logger_execute = logging.getLogger('tui-app.execute')
+logger_key = logging.getLogger("tui-app.process_key")
+logger_mouse = logging.getLogger("tui-app.process_mouse")
 
 class row_screen(tui_base.screen):
     active_field = None
@@ -93,14 +98,14 @@ class row_screen(tui_base.screen):
         for column in self.columns:
             if len(column.name) > self.max_col_name_len:
                 self.max_col_name_len = len(column.name)
-        trace(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
+        logger.info(f"row_screen.init({self.row.table_name}) {self.max_col_name_len=}")
 
     def process_mouse(self, mouse_event):
         result = super().process_mouse(mouse_event)     # popup routing first
         if tui_base.event_handled(result):
             return result
         _, x, y, _, bstate = mouse_event
-        trace(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        logger_mouse.info(f"row_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         self.clear_message()
         # run command
         if bstate == tui_base.curses.BUTTON1_CLICKED:
@@ -128,7 +133,7 @@ class row_screen(tui_base.screen):
         return super().has_unsaved() or self._unapplied_changes()
 
     def process_key(self, key):
-        trace(f"row_screen.process_key({key=}) {self.active_field=}")
+        logger_key.info(f"row_screen.process_key({key=}) {self.active_field=}")
         if key == '\x1B' and self.msg_len:      # first Esc after an error dismisses it, field untouched;
             self.clear_message()                # a second Esc then reaches the field -> abort + revert
             return None
@@ -208,13 +213,13 @@ class row_screen(tui_base.screen):
         self._draw_button(i, focused=True)
 
     def execute(self, command):
-        trace(f"row_screen.execute({command=})")
+        logger_execute.info(f"row_screen.execute({command=})")
         match command:
             case 'Cancel':
-                trace(f"row_screen.execute: Cancel command going back to screen {self.back.title}")
+                logger_execute.info(f"row_screen.execute: Cancel command going back to screen {self.back.title}")
                 return self.back
             case 'Apply':  # write the copy to the master row (db) + Back
-                trace(f"row_screen.execute: Apply")
+                logger_execute.info(f"row_screen.execute: Apply")
                 if not self.accept_all():        # accept EVERY changed field, not just the active one
                     return None
                 if not self.validate():
@@ -222,7 +227,7 @@ class row_screen(tui_base.screen):
                 self.copy_to_master()
                 if self.callback is not None:
                     self.callback()
-                trace(f"row_screen.execute -> {self.back=}")
+                logger_execute.info(f"row_screen.execute -> {self.back=}")
                 return self.back
             case 'Create':  # creating a row
                 if not self.accept_all():
@@ -236,11 +241,11 @@ class row_screen(tui_base.screen):
                     return None                 # stay on the form so the user can fix it
                 if self.callback is not None:
                     self.callback()
-                trace(f"row_screen.execute -> {self.back=}")
+                logger_execute.info(f"row_screen.execute -> {self.back=}")
                 return self.back
-        trace(f"row_screen.execute: forwarding to base screen class")
+        logger_execute.info(f"row_screen.execute: forwarding to base screen class")
         ans = super().execute(command)
-        trace(f"row_screen.execute -> {ans}")
+        logger_execute.info(f"row_screen.execute -> {ans}")
         return ans
 
     def accept_field(self, field):
@@ -282,7 +287,7 @@ class row_screen(tui_base.screen):
         try:
             return self.row.get(name)
         except Exception as exc:
-            trace(f"row_screen._get_value({name=}): {type(exc).__name__}: {exc} -> blank")
+            logger.info(f"row_screen._get_value({name=}): {type(exc).__name__}: {exc} -> blank")
             return ''
 
     def recompute(self):
@@ -336,7 +341,7 @@ class row_screen(tui_base.screen):
         self.app.set_changed()
 
     def draw_body(self):
-        trace(f"draw_body(): {len(self.columns)=}")
+        logger.info(f"draw_body(): {len(self.columns)=}")
         self.begin_x = self.max_col_name_len + 2
         self.width = self.cols - self.begin_x
         prior = {f.screen_key: f for f in self.fields}    # by screen_key (== column index)
@@ -360,7 +365,7 @@ class row_screen(tui_base.screen):
             if column.edit_width is not None:
                 nlines = max(nlines, math.ceil(column.edit_width / self.width))
             shared.nlines = nlines
-            trace(f"{column.name=}, {len(text)=}, {nlines=} at {lineno=}, {self.begin_x=}, {preserve=}")
+            logger.info(f"{column.name=}, {len(text)=}, {nlines=} at {lineno=}, {self.begin_x=}, {preserve=}")
             if preserve:
                 field = shared.from_field(old, begin_y=lineno, screen_key=i)
             else:

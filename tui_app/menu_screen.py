@@ -1,11 +1,16 @@
 # menu_screen.py
 
 import math
+import logging
 
-from csv_app.trace import trace
 from . import tui_base
 from .field import field_shared, read_only_single_line, editable_single_shared
 
+
+logger = logging.getLogger('tui-app.menu_screen')
+logger_execute = logging.getLogger('tui-app.execute')
+logger_key = logging.getLogger("tui-app.process_key")
+logger_mouse = logging.getLogger("tui-app.process_mouse")
 
 class action_field(read_only_single_line):
     def __init__(self, screen_key, action, field_shared, begin_y, attr_pair):
@@ -87,8 +92,8 @@ class menu_screen(tui_base.screen):
 
     def init(self):
         curses = tui_base.curses
-        trace(f"menu_screen.init({self.title}) {self.num_columns=}, {self.widths=}, {self.col_widths=}")
-        trace(f"    {hex(curses.color_pair(0x01))=}, {hex(curses.A_REVERSE)=}")
+        logger.info(f"menu_screen.init({self.title}) {self.num_columns=}, {self.widths=}, {self.col_widths=}")
+        logger.info(f"    {hex(curses.color_pair(0x01))=}, {hex(curses.A_REVERSE)=}")
         for a in self.actions.values():
             a.app_is(self.app)
 
@@ -97,7 +102,7 @@ class menu_screen(tui_base.screen):
         if tui_base.event_handled(result):
             return result
         _, x, y, _, bstate = mouse_event
-        trace(f"menu_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
+        logger_mouse.info(f"menu_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
 
         if self.answer is not None and self.answer.enclose(y, x):
             return self.answer.process_mouse(mouse_event)
@@ -110,7 +115,7 @@ class menu_screen(tui_base.screen):
         else:
             return mouse_event
 
-        trace(f"menu_screen.process_mouse({y=}, {x=}) in field {index=}, {field.name=}")
+        logger_mouse.info(f"menu_screen.process_mouse({y=}, {x=}) in field {index=}, {field.name=}")
         match bstate:
             # UI line 45: a single LEFT CLICK runs the action (== keyboard Enter); accept a
             # click-resolution DOUBLE_CLICK the same way so a fast double still runs it once.
@@ -118,25 +123,30 @@ class menu_screen(tui_base.screen):
                     if field.action.can_run:
                 self.activate_field(field)
                 self.clear_message()
-                return self.execute(field.action)
+                logger_mouse.info(f"menu_screen.process_mouse: executing {field.action.name}")
+                ans = self.execute(field.action)
+                logger_mouse.info(f"menu_screen.process_mouse: {field.action.name} returned {ans}, returning it")
+                return ans
         return mouse_event
 
     def process_key(self, key):
-        trace(f"menu_screen.process_key({key=}) {self.active_field=}")
+        logger_key.info(f"menu_screen.process_key({key=}) {self.active_field=}")
         key = super().process_key(key)          # popup routing (Esc closes a popup first) + F8/F1
         if tui_base.event_handled(key):
             return key
         if key == '\x1B' and self.answer is not None:   # Esc: two-stage (matches table/row)
             if self.error_message is not None:
-                trace("menu_screen.process_key: Esc -> dismiss error (keep question)")
+                logger_key.info("menu_screen.process_key: Esc -> dismiss error (keep question)")
                 self.clear_error()              # first Esc: dismiss the error, keep the prompt + entry
             else:
-                trace("menu_screen.process_key: Esc -> dismiss question")
+                logger_key.info("menu_screen.process_key: Esc -> dismiss question")
                 self.clear_question()           # second Esc (no error): bail out of the question
+            logger_key.info("menu_screen.process_key: Esc -> returning None")
             return None
         if self.answer is not None:
             ans = self.answer.process_key(key)
             if tui_base.event_handled(ans):
+                logger_key.info("menu_screen.process_key: handled by answer -> returning {ans}")
                 return ans
         if key == 'KEY_DOWN' or key == '\t':    # Tab moves to the next action (like Down)
             if self.active_field is None:
@@ -169,19 +179,19 @@ class menu_screen(tui_base.screen):
     def execute(self, action):
         if action == 'Back':                    # F8 from the base screen (execute is otherwise
             return self.back                    # action-based, so it can't go through the command chain)
-        trace(f"menu_screen.execute({action.name=})")
+        logger_execute.info(f"menu_screen.execute({action.name=}): executing action {action.name}")
         ans = action.execute(self)
-        trace(f"menu_screen.execute -> {ans}")
+        logger_execute.info(f"menu_screen.execute -> {ans}")
         return ans
 
     def draw_body(self):
-        trace(f"draw_body(): {self.num_columns=}, {self.col_widths=}, {self.widths=}")
+        logger.info(f"draw_body(): {self.num_columns=}, {self.col_widths=}, {self.widths=}")
         fill = self.cols - sum(self.col_widths)
         gap = fill // ((self.num_columns - 1) + 4)
         self.begin_x = [gap * 2]
         for width in self.col_widths[:-1]:
             self.begin_x.append(self.begin_x[-1] + width + gap)
-        trace(f"draw_body(): {fill=}, {gap=}, {self.begin_x=}")
+        logger.info(f"draw_body(): {fill=}, {gap=}, {self.begin_x=}")
         self.fields = []
         column = 1
         x = self.begin_x[column - 1]
@@ -200,7 +210,7 @@ class menu_screen(tui_base.screen):
                 x = self.begin_x[column - 1]
                 widths = self.widths[column - 1]
             nlines = 1
-           #trace(f"{action.name=}, {action.number=}, {action.can_run=}, {action.step.state=}, "
+           #logger.debug(f"{action.name=}, {action.number=}, {action.can_run=}, {action.step.state=}, "
            #      f"{nlines=} at {lineno=}, {x=}, {widths=}")
             w = widths[0]
             if action.task is not None:
@@ -221,7 +231,7 @@ class menu_screen(tui_base.screen):
         if lineno > self.max_y:
             self.max_y = lineno
         last_y.append(lineno)
-        trace(f"{self.max_y=}, {last_y=}")
+        logger.info(f"{self.max_y=}, {last_y=}")
         self.active_field = None
 
         # write legend:
@@ -254,8 +264,7 @@ class menu_screen(tui_base.screen):
             self._draw_question()
         if self.error_message is not None:      # validation error, 2 lines below the question/answer
             self.show_error(self.error_message)
-        trace("draw_body done")
-       #trace()
+        logger.info("draw_body done")
 
     def show_message(self, msg, attr):
         msg = msg[:self.cols - 1]            # clip to the line so a long message can't overflow
@@ -310,7 +319,7 @@ class menu_screen(tui_base.screen):
         callback receives the CONVERTED value and may itself raise ValueError to reject it (a business
         rule); either way run_callback shows the message and keeps the prompt up for another try.
         '''
-        trace(f"menu_screen.ask_question({question=!r}, {default=!r})")
+        logger.info(f"menu_screen.ask_question({question=!r}, {default=!r})")
         self.clear_question()
         self.question = question
         self.callback = callback
@@ -324,13 +333,13 @@ class menu_screen(tui_base.screen):
         self.answer.activate()          # select the whole default so the first keystroke replaces it
 
     def run_callback(self, s):
-        trace(f"menu_screen.run_callback({s=!r})")
+        logger.info(f"menu_screen.run_callback({s=!r})")
         self.clear_error()                      # clear any prior error before this attempt
         # 1) type/format check.  A bad value keeps THIS prompt up (not yet torn down).
         try:
             value = self.answer.convert()
         except ValueError as exc:
-            trace(f"menu_screen.run_callback: convert failed: {exc}")
+            logger.info(f"menu_screen.run_callback: convert failed: {exc}")
             self.show_error(str(exc))
             return None
         # 2) type-valid.  Tear down BEFORE the callback so a callback that chains to another question
@@ -341,11 +350,11 @@ class menu_screen(tui_base.screen):
         try:
             ans = callback(value)
         except ValueError as exc:
-            trace(f"menu_screen.run_callback: callback rejected: {exc}")
+            logger.info(f"menu_screen.run_callback: callback rejected: {exc}")
             self.show_error(str(exc))
             self.ask_question(question, callback, s, convert_fn=convert_fn)   # re-ask with the entry
             return None
-        trace(f"menu_screen.run_callback -> {ans}")
+        logger.info(f"menu_screen.run_callback -> {ans}")
         return ans
 
     def clear_question(self):

@@ -40,13 +40,21 @@ It builds on three classes that you must write with the following interfaces:
 See the tui_base.py module doc string for how the tui library works.
 '''
 
-from csv_app.trace import trace
+import logging
+from datetime import datetime
+
 from . import tui_base
 from .table_screen import table_screen
 
 
+logger_execute = logging.getLogger('tui-app.execute')
+Date_format = "%m/%d/%y"
+Datetime_format = "%y-%m-%d@%H:%M"
+
 def start(tables, top_screen=None, testing=False):
     global app_instance
+    logging.basicConfig(level=logging.INFO,
+                        filename=f"log_{datetime.now():{Datetime_format}}.txt", datefmt=Date_format)
     app_instance = app(tables, top_screen, testing)
     tui_base.curses.wrapper(app_instance.run)
 
@@ -109,20 +117,20 @@ class app:
 
         Raises ValueError for unknown commands.
         '''
-        trace(f"app.execute({command=})")
+        logger_execute.info(f"app.execute({command=})")
         if command in self.tables:
-            trace("command is table, returning table_screen")
+            logger_execute.info("command is table, returning table_screen")
             return table_screen(self.tables[command], self.screen)
         match command:
             case 'Save':
-                trace(f"app.execute('Save'): not yet implemented")
+                logger_execute.info(f"app.execute('Save'): not yet implemented")
                 self.reset_changed()
                 return 'REFRESH'
             case 'Exit':
-                trace(f"app.execute: Exit command -> 'APP_EXIT'")
+                logger_execute.info(f"app.execute: Exit command -> 'APP_EXIT'")
                 return 'APP_EXIT'
             case 'Abort':
-                trace(f"app.execute: Abort command -> 'APP_ABORT'")
+                logger_execute.info(f"app.execute: Abort command -> 'APP_ABORT'")
                 return 'APP_ABORT'
             case _:
                 raise ValueError(f"app.execute: {command=} unknown")

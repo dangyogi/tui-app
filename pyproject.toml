@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tui-app"
-version = "0.0.1"
+version = "0.0.2"
 description = "Quick and dirty TUI app framework for tables and forms."
 readme = "README.md"
 license = "MIT"
