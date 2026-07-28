@@ -122,10 +122,6 @@ class app:
             logger_execute.info("command is table, returning table_screen")
             return table_screen(self.tables[command], self.screen)
         match command:
-            case 'Save':
-                logger_execute.info(f"app.execute('Save'): not yet implemented")
-                self.reset_changed()
-                return 'REFRESH'
             case 'Exit':
                 logger_execute.info(f"app.execute: Exit command -> 'APP_EXIT'")
                 return 'APP_EXIT'
@@ -135,10 +131,3 @@ class app:
             case _:
                 raise ValueError(f"app.execute: {command=} unknown")
 
-
-
-if __name__ == "__main__":
-    import database
-
-    database.load_database()
-    start(database.Tables)
