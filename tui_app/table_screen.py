@@ -505,7 +505,7 @@ class table_screen(tui_base.screen):
     def execute(self, command):
         logger_execute.info(f"table_screen.execute({command=})")
         if command == 'Back':
-            if self._commit_edit():
+            if self._commit_edit() and self.validate():
                 logger_execute.info(f"table_screen.execute: _commit_edit worked -> {self.back=}")
                 return self.back
             logger_execute.info(f"table_screen.execute: _commit_edit failed -> None")

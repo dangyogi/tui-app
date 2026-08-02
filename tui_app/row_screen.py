@@ -143,7 +143,7 @@ class row_screen(tui_base.screen):
                 self.message("Unapplied changes: use Cancel or Apply to leave",
                              tui_base.curses.color_pair(self.error_msg_attr))
                 return None                     # don't leave with unapplied changes
-            return self.back
+           #return self.back
         key = super().process_key(key)          # popup routing (Esc closes it) + F1 help
         if tui_base.event_handled(key):
             return key
