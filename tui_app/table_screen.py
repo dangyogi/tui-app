@@ -81,7 +81,7 @@ class table_screen(tui_base.screen):
         r'''Run each time run is called, but _not_ each time the screen is resized.
         '''
         logger.info(f"table_screen.init({self.table.name=})")
-        self.columns = self.table.columns
+        self.columns = [col for col in self.table.columns if not col.hidden]
         # indexes (into self.columns) of columns a user can focus/edit; read-only and calculated
         # columns are never focusable.  Consumed by cell-focus navigation in later batches.
         self.editable_cols = [i for i, column in enumerate(self.columns) if column.can_edit]
