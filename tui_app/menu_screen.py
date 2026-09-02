@@ -37,7 +37,7 @@ class menu_screen(tui_base.screen):
     error_message = None    # validation error, 2 lines BELOW the question/answer (show_error)
     question = None
     answer = None
-    answer_width = 12     # width of the ask_question answer field (it scrolls if the value is longer)
+    answer_width = 12       # width of the ask_question answer field (it scrolls if the value is longer)
     error_pair = 0x01
     default_pair = 0x00
 
@@ -45,6 +45,8 @@ class menu_screen(tui_base.screen):
     cant_run_pair = 0x10  # red text
     may_run_pair  = 0x30  # yellow text
     must_run_pair = 0x20  # green text
+    note_pair     = 0x40  # blue text
+
     help_lines = [        # F1 help (base screen.show_help renders it)
         "                                     Keyboard                      Mouse",
         "Answer editing:",
@@ -73,22 +75,24 @@ class menu_screen(tui_base.screen):
     def __init__(self, actions, title="Menu", back=None, note=None):
         super().__init__(title, back, note)
         self.actions = actions
-        self.widths = [[0, 0, 0]]   # list of [max_task_number_len, max_step_number_len, max_name_len], one per column
+        self.widths = [[0, 0]]   # list of [max_task_number_len, max_remainder], one per column
         self.num_columns = 1
         for a in self.actions.values():
             if a.column_break:
                 self.num_columns += 1
-                self.widths.append([0, 0, 0])
+                self.widths.append([0, 0])
             if a.task is None:
                 if len(a.number) > self.widths[self.num_columns - 1][0]:
                     self.widths[self.num_columns - 1][0] = len(a.number)
+                remainder = 1 + len(a.name)
             else:
-                if len(a.number) > self.widths[self.num_columns - 1][1]:
-                    self.widths[self.num_columns - 1][1] = len(a.number)
-            if len(a.name) > self.widths[self.num_columns - 1][2]:
-                self.widths[self.num_columns - 1][2] = len(a.name)
-        self.col_widths = [task_num_width + step_num_width + name_width + 2
-                           for task_num_width, step_num_width, name_width in self.widths]
+                remainder = 2 + len(a.number) + len(a.name)
+            if remainder > self.widths[self.num_columns - 1][1]:
+                logger.info(f"menu_screen.__init__: {a.name=!r}, {remainder=} new longest, was "
+                            f"{self.widths[self.num_columns - 1][1]}")
+                self.widths[self.num_columns - 1][1] = remainder
+        self.col_widths = [task_num_width + remainder_width
+                           for task_num_width, remainder_width in self.widths]
 
     def init(self):
         curses = tui_base.curses
@@ -213,12 +217,18 @@ class menu_screen(tui_base.screen):
            #logger.debug(f"{action.name=}, {action.number=}, {action.can_run=}, {action.step.state=}, "
            #      f"{nlines=} at {lineno=}, {x=}, {widths=}")
             w = widths[0]
-            if action.task is not None:
-                w += 1 + widths[1]
-            self.app.stdscr.addstr(lineno, x + w - len(action.number), f"{action.number}")
-            shared = action_shared(action.name, nlines, x + w + 1, widths[2], self.app)
+            if action.task is None:
+                # top level, right justify
+                self.app.stdscr.addstr(lineno, x + w - len(action.number), f"{action.number}")
+            else:
+                # indent under task, left justify
+                self.app.stdscr.addstr(lineno, x + w + 1, f"{action.number}")
+                w += 1 + len(action.number)
+            shared = action_shared(action.name, nlines, x + w + 1, len(action.name), self.app)
             if action.is_task:
                 attr_pair = self.task_pair
+            elif action.is_note:
+                attr_pair = self.note_pair
             elif not action.can_run:
                 attr_pair = self.cant_run_pair
             elif action.has_run:
@@ -239,21 +249,22 @@ class menu_screen(tui_base.screen):
             # place legend to the lower right of column
             x += self.col_widths[0]
             x += (self.cols - x - 9) // 3
-            y = self.max_y - 5
+            y = self.max_y - 6
         else:
             # place legend under last column
-            x += widths[0] + 1 + widths[1] + 1
-            if last_y[-1] + 7 <= self.max_y:
-                y = self.max_y - 5
+            x += (widths[0] + widths[1] - 9) // 2
+            if last_y[-1] + 8 <= self.max_y:
+                y = self.max_y - 6
             else:
                 y = last_y[-1] + 1
-                self.max_y = y + 5
+                self.max_y = y + 6
         curses = tui_base.curses
         self.app.stdscr.addstr(y, x, "Legend:", curses.A_UNDERLINE)
         self.app.stdscr.addstr(y + 1, x, "task", curses.color_pair(self.task_pair))
         self.app.stdscr.addstr(y + 2, x, "must run", curses.color_pair(self.must_run_pair))
         self.app.stdscr.addstr(y + 3, x, "may rerun", curses.color_pair(self.may_run_pair))
         self.app.stdscr.addstr(y + 4, x, "can't run", curses.color_pair(self.cant_run_pair))
+        self.app.stdscr.addstr(y + 5, x, "comment", curses.color_pair(self.note_pair))
 
         # write message:
         if self.message is not None:
