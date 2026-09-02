@@ -25,6 +25,7 @@ It builds on three classes that you must write with the following interfaces:
         .validate(s)             # returns s converted to its python value; raises ValueError if invalid
                                  #   (the field stores this as its convert_fn)
         .column_attr_pair(row)   # returns attr_pair for column, or None for default attr
+        .hidden                  # True to omit from table_screen
 
     row:
         .table_name
@@ -43,18 +44,19 @@ See the tui_base.py module doc string for how the tui library works.
 import logging
 from datetime import datetime
 
-from . import tui_base
-from .table_screen import table_screen
-
-
 logger_execute = logging.getLogger('tui-app.execute')
 Date_format = "%m/%d/%y"
 Datetime_format = "%y-%m-%d@%H:%M"
 
+logging.basicConfig(level=logging.INFO,
+                    filename=f"log_{datetime.now():{Datetime_format}}.txt", datefmt=Date_format)
+
+from . import tui_base
+from .table_screen import table_screen
+
+
 def start(tables, top_screen=None, testing=False):
     global app_instance
-    logging.basicConfig(level=logging.INFO,
-                        filename=f"log_{datetime.now():{Datetime_format}}.txt", datefmt=Date_format)
     app_instance = app(tables, top_screen, testing)
     tui_base.curses.wrapper(app_instance.run)
 
