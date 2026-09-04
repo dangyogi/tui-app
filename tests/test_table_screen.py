@@ -24,12 +24,13 @@ def patch_curses(monkeypatch):
 
 class FakeColumn:
     r'''Minimal stand-in for a consuming app's column object.'''
-    def __init__(self, name, can_edit=False, min_width=None, abbr=None, alignment="left"):
+    def __init__(self, name, can_edit=False, min_width=None, abbr=None, alignment="left", hidden=False):
         self.name = name
         self.can_edit = can_edit
         self.min_width = min_width
         self.abbr = abbr or name   # matches csv_app Column: abbr defaults to the name
         self.alignment = alignment
+        self.hidden = hidden
 
     def validate(self, s):
         pass
