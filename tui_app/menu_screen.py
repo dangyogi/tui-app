@@ -314,13 +314,13 @@ class menu_screen(tui_base.screen):
         if field is not self.answer:
             super().activate_field(field)
 
-    def _question_xy(self):
+    def _question_yx(self):
         r'''(y, x) of the question label; the answer field sits at x + len(question) + 1.'''
         x = (self.cols - len(self.question) - self.answer_width - 1) // 2   # center question/response
         return self.max_y + 4, x
 
     def _draw_question(self):
-        y, x = self._question_xy()
+        y, x = self._question_yx()
         self.app.stdscr.addstr(y, x, self.question)
         self.answer.paint()
 
@@ -334,7 +334,7 @@ class menu_screen(tui_base.screen):
         self.clear_question()
         self.question = question
         self.callback = callback
-        y, x = self._question_xy()
+        y, x = self._question_yx()
         shared = editable_single_shared("answer", 1, x + len(question) + 1, self.answer_width, self.app,
                                         convert_fn=convert_fn,
                                        #alignment="right",
@@ -370,7 +370,7 @@ class menu_screen(tui_base.screen):
 
     def clear_question(self):
         if self.question is not None:
-            y, x = self._question_xy()
+            y, x = self._question_yx()
             self.app.stdscr.addstr(y, x, self.question, tui_base.curses.A_INVIS)
             self.app.stdscr.addstr(y, x + len(self.question) + 1, ' ' * self.answer_width)
             self.question = None
