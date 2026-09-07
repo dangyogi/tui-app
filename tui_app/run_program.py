@@ -47,6 +47,17 @@ def git_commit(message):
     run_program(["git", "commit", "-a", "-m", message])
 
 def git_push():
+    # git push output looks like this:
+    #
+    # Enumerating objects: 11, done.
+    # Counting objects: 100% (11/11), done.
+    # Delta compression using up to 8 threads
+    # Compressing objects: 100% (6/6), done.
+    # Writing objects: 100% (6/6), 944 bytes | 944.00 KiB/s, done.
+    # Total 6 (delta 5), reused 0 (delta 0), pack-reused 0
+    # remote: Resolving deltas: 100% (5/5), completed with 5 local objects.
+    # To github.com:dangyogi/tui-app.git
+    #    b82274d..0c8cee0  main -> main
     run_program(["git", "push"])
 
 def git_commit_push(message, notify_fn=print):
