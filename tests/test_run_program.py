@@ -40,6 +40,7 @@ Sections = dict(
     # neither of these appear if "Changes to be committed" is present, regardless of "Changes not staged"
     no_changes='no changes added to commit (use "git add" and/or "git commit -a")',
     nothing_untracked='nothing added to commit but untracked files present (use "git add" to track)',
+
     nothing_to_commit='nothing to commit, working tree clean',
 
     unknown0='none of the above blank',
@@ -60,7 +61,26 @@ def test_Sections(name, body):
 
 
 @pytest.mark.parametrize("sections, results", [
-    ('line1 new_file', ['needs commit']),
+    ('line1,not_staged,no_changes', 'needs commit,needs -a'),
+    ('line2,not_staged,no_changes', 'needs commit,needs -a,needs push'),
+    ('line1,nothing_to_commit', ''),
 ])
 def test_parse_git(sections, results):
-    assert parse_git('\n\n'.join(Sections[s] for s in sections.split())) == set(results)
+    if results:
+        answer = set(results.split(','))
+    else:
+        answer = set()
+    assert parse_git('\n\n'.join(Sections[s] for s in sections.split(','))) == answer
+
+
+@pytest.mark.parametrize("sections, bad_section", [
+    ('line1,new_file', 'new_file'),
+    ('line1,deleted', 'deleted'),
+    ('line1,untracked,nothing_untracked', 'untracked'),
+    ('line1,unknown0,no_changes', 'unknown0'),
+    ('line1,unknown1,no_changes', 'unknown1'),
+])
+def test_parse_git_errors(sections, bad_section):
+    with pytest.raises(ValueError) as exc:
+        parse_git('\n\n'.join(Sections[s] for s in sections.split(',')))
+    assert exc.value.args[0] == "Unknown git output: " + Sections[bad_section].split('\n')[0]

@@ -26,18 +26,18 @@ def parse_git(stdout):
                 flags.add("needs push")
                 continue
             raise ValueError(f"Unknown second line to 'On branch main': {line[1]}")
-        if section.startswith("Changes to be committed:\n"):
-            flags.add("needs commit")
-            continue
+       #if section.startswith("Changes to be committed:\n"):
+       #    flags.add("needs commit")
+       #    continue
         if section.startswith("Changes not staged for commit:\n"):
             flags.add("needs commit")
             flags.add("needs -a")
             continue
         if section.startswith("no changes added to commit"):
             continue
-        if section.startswith("nothing added to commit but untracked files present\n"):
+        if section.startswith("nothing added to commit but untracked files present"):
             continue
-        if section.startswith("nothing to commit, working tree clean\n"):
+        if section.startswith("nothing to commit, working tree clean"):
             continue
         # let Untracked files: fall through, needs manual intervention
         raise ValueError(f"Unknown git output: {section.split("\n")[0]}")
@@ -80,9 +80,7 @@ def run_program(command):
         if exc.stderr:
             raise ValueError(exc.stderr)
         raise ValueError(f"{command} failed with {exc.returncode}")
-    if cp.stderr:
-        raise ValueError(cp.stderr)
-    return cp.stdout
+    return cp.stderr + cp.stdout
 
 
 
