@@ -32,6 +32,12 @@ Sections = dict(
         (use "git add <file>..." to update what will be committed)
         (use "git restore <file>..." to discard changes in working directory)
       \tmodified:   actions.py"""),
+    not_staged2=align("""
+      Changes not staged for commit:
+        (use "git add <file>..." to update what will be committed)
+        (use "git restore <file>..." to discard changes in working directory)
+      \tmodified:   actions.py
+      \tmodified:   fungus.py"""),
     untracked=align("""
       Untracked files:
         (use "git add <file>..." to include in what will be committed)
@@ -60,17 +66,22 @@ def test_Sections(name, body):
     assert Sections[name] == body
 
 
-@pytest.mark.parametrize("sections, results", [
-    ('line1,not_staged,no_changes', 'needs commit,needs -a'),
-    ('line2,not_staged,no_changes', 'needs commit,needs -a,needs push'),
-    ('line1,nothing_to_commit', ''),
+@pytest.mark.parametrize("sections, ok_files, results", [
+    ('line1,not_staged,no_changes', None, 'needs commit,needs -a'),
+    ('line2,not_staged,no_changes', None, 'needs commit,needs -a,needs push'),
+    ('line1,nothing_to_commit', None, ''),
+    ('line1,not_staged,no_changes', ('actions.py',), 'needs commit,needs -a'),
+    ('line1,not_staged,no_changes', ('actions.py', 'foobar.py'), 'needs commit,needs -a'),
+    ('line1,not_staged2,no_changes', ('actions.py', 'fungus.py'), 'needs commit,needs -a'),
+    ('line1,not_staged2,no_changes', ('fungus.py', 'actions.py'), 'needs commit,needs -a'),
+    ('line1,not_staged2,no_changes', ('actions.py', 'fungus.py', 'foobar.py'), 'needs commit,needs -a'),
 ])
-def test_parse_git(sections, results):
+def test_parse_git(sections, ok_files, results):
     if results:
         answer = set(results.split(','))
     else:
         answer = set()
-    assert parse_git('\n\n'.join(Sections[s] for s in sections.split(','))) == answer
+    assert parse_git('\n\n'.join(Sections[s] for s in sections.split(',')), ok_files) == answer
 
 
 @pytest.mark.parametrize("sections, bad_section", [
@@ -84,3 +95,14 @@ def test_parse_git_errors(sections, bad_section):
     with pytest.raises(ValueError) as exc:
         parse_git('\n\n'.join(Sections[s] for s in sections.split(',')))
     assert exc.value.args[0] == "Unknown git output: " + Sections[bad_section].split('\n')[0]
+
+
+@pytest.mark.parametrize("sections, ok_files, bad_file", [
+    ('line1,not_staged,no_changes', ('foobar.py'), 'actions.py'),
+    ('line1,not_staged2,no_changes', ('actions.py', 'foobar.py'), 'fungus.py'),
+    ('line1,not_staged2,no_changes', ('fungus.py', 'foobar.py'), 'actions.py'),
+])
+def test_parse_git_ok_files_errors(sections, ok_files, bad_file):
+    with pytest.raises(ValueError) as exc:
+        parse_git('\n\n'.join(Sections[s] for s in sections.split(',')), ok_files)
+    assert exc.value.args[0] == "Unexpected modified: " + bad_file

@@ -3,15 +3,15 @@
 from subprocess import run, CalledProcessError
 
 
-def git_status():
+def git_status(ok_files=None):
     r'''Returns set of "needs commit", "needs -a", "needs push".
 
     Or empty set if no action needed.
     '''
     stdout = run_program(["git", "status"])
-    return parse_git(stdout)
+    return parse_git(stdout, ok_files)
 
-def parse_git(stdout):
+def parse_git(stdout, ok_files=None):
     r'''Returns set of "needs commit", "needs -a", "needs push".
 
     Or empty set if no action needed.
@@ -30,6 +30,15 @@ def parse_git(stdout):
        #    flags.add("needs commit")
        #    continue
         if section.startswith("Changes not staged for commit:\n"):
+            if ok_files is not None:
+                for line in section.split('\n')[1:]:
+                    line = line.strip()
+                    if line.startswith("("):
+                        continue
+                    line_split = line.split()
+                    if line_split[0] == "modified:" and line_split[1] in ok_files:
+                        continue
+                    raise ValueError(f"Unexpected {' '.join(line_split)}")
             flags.add("needs commit")
             flags.add("needs -a")
             continue
@@ -63,8 +72,8 @@ def git_push():
     out = run_program(["git", "push"])
    #print(out)  # only shows the last 2 lines
 
-def git_commit_push(message, notify_fn=print):
-    status = git_status()
+def git_commit_push(message, ok_files=None, notify_fn=print):
+    status = git_status(ok_files)
     push = "needs push" in status
     notify_message = ""
     def notify(text):
@@ -74,7 +83,7 @@ def git_commit_push(message, notify_fn=print):
         else:
             notify_message = text
         notify_fn(notify_message)
-    if "needs commit" in git_status():
+    if "needs commit" in status:
         notify("doing commit")
         git_commit(message)
         push = True
@@ -101,7 +110,7 @@ def run_program(command):
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--status", "-s", action="store_true", default=False)
+    parser.add_argument("--status", "-s", metavar="OK-FILE", nargs="*", default=None)
     parser.add_argument("--commit", "-c", metavar="COMMIT-MESSAGE")
     parser.add_argument("--push", "-p", action="store_true", default=False)
     parser.add_argument("--commit-push", "-C", metavar="COMMIT-MESSAGE")
@@ -110,7 +119,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.status:
-        print("status:", git_status())
+        print("ok_files:", args.status)
+        print("status:", git_status(args.status))
     elif args.commit:
         print("commit:", args.commit)
         git_commit(args.commit)
