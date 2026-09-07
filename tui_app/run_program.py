@@ -3,9 +3,13 @@
 from subprocess import run, CalledProcessError
 
 
-def git_commit_needed():
+def git_status():
+    r'''Returns set of "needs commit", "needs -a", "needs push".
+
+    Or empty set if no action needed.
+    '''
     stdout = run_program(["git", "status"])
-    return "needs commit" in parse_git(stdout)
+    return parse_git(stdout)
 
 def parse_git(stdout):
     r'''Returns set of "needs commit", "needs -a", "needs push".
@@ -29,9 +33,7 @@ def parse_git(stdout):
             flags.add("needs commit")
             flags.add("needs -a")
             continue
-        if section.startswith("no changes added to commit, working tree clean\n"):
-            flags.add("needs commit")
-            flags.add("needs -a")
+        if section.startswith("no changes added to commit"):
             continue
         if section.startswith("nothing added to commit but untracked files present\n"):
             continue
@@ -44,19 +46,27 @@ def parse_git(stdout):
 def git_commit(message):
     run_program(["git", "commit", "-a", "-m", message])
 
-def git_push_needed():
-    stdout = run_program(["git", "status"])
-    push_needed = False
-    for section in stdout.split("\n\n"):
-        if section.startswith("On branch main\n"):
-            continue
-        if section.startswith("nothing to commit, working tree clean\n"):
-            continue
-        raise ValueError(section.split("\n")[0])
-    return push_needed
-
 def git_push():
     run_program(["git", "push"])
+
+def git_commit_push(message, notify_fn=print):
+    status = git_status()
+    push = "needs push" in status
+    notify_message = ""
+    def notify(text):
+        nonlocal notify_message
+        if notify_message:
+            notify_message += "; " + text
+        else:
+            notify_message = text
+        notify_fn(notify_message)
+    if "needs commit" in git_status():
+        notify("doing commit")
+        git_commit(message)
+        push = True
+    if push:
+        notify("doing push")
+        git_push()
 
 def print_file(filename):
     run_program(["lp", filename])
@@ -65,8 +75,8 @@ def run_program(command):
     try:
         cp = run(command, capture_output=True, text=True, check=True)
     except CalledProcessError as exc:
-        if exc.stdout:
-            print("stdout:", exc.stdout)
+       #if exc.stdout:
+       #    print("stdout:", exc.stdout)
         if exc.stderr:
             raise ValueError(exc.stderr)
         raise ValueError(f"{command} failed with {exc.returncode}")
@@ -75,26 +85,28 @@ def run_program(command):
     return cp.stdout
 
 
+
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--commit_needed", "-c", action="store_true", default=False)
-    parser.add_argument("--commit", "-C")
-    parser.add_argument("--push_needed", "-p", action="store_true", default=False)
-    parser.add_argument("--push", "-P", action="store_true", default=False)
-    parser.add_argument("--print", "-T")
-    parser.add_argument("--test", "-t", default=(), help="command", nargs="+")
+    parser.add_argument("--status", "-s", action="store_true", default=False)
+    parser.add_argument("--commit", "-c", metavar="COMMIT-MESSAGE")
+    parser.add_argument("--push", "-p", action="store_true", default=False)
+    parser.add_argument("--commit-push", "-C", metavar="COMMIT-MESSAGE")
+    parser.add_argument("--print", "-T", metavar="FILENAME")
+    parser.add_argument("--test", "-t", default=(), metavar="COMMAND-ARG", nargs="+")
     args = parser.parse_args()
 
-    if args.commit_needed:
-        git_commit_needed()
+    if args.status:
+        print("status:", git_status())
     elif args.commit:
         print("commit:", args.commit)
         git_commit(args.commit)
-    elif args.push_needed:
-        git_push_needed()
     elif args.push:
         git_push()
+    elif args.commit_push:
+        print("commit_push:", args.commit_push)
+        git_commit_push(args.commit_push)
     elif args.print:
         print("print:", args.print)
         print_file(args.print)
