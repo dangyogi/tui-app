@@ -58,7 +58,10 @@ def git_push():
     # remote: Resolving deltas: 100% (5/5), completed with 5 local objects.
     # To github.com:dangyogi/tui-app.git
     #    b82274d..0c8cee0  main -> main
-    run_program(["git", "push"])
+    #
+    # the last 2 lines go to stderr.  The rest don't show up in stdout when stdout is redirected.
+    out = run_program(["git", "push"])
+    print(out)
 
 def git_commit_push(message, notify_fn=print):
     status = git_status()
