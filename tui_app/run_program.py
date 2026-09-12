@@ -49,7 +49,8 @@ def parse_git(stdout, ok_files=None):
         if section.startswith("nothing to commit, working tree clean"):
             continue
         # let Untracked files: fall through, needs manual intervention
-        raise ValueError(f"Unknown git output: {section.split("\n")[0]}")
+        line1 = section.split('\n')[0]
+        raise ValueError(f"Unknown git output: {line1}")
     return flags
 
 def git_commit(message):
