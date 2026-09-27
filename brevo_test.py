@@ -42,8 +42,8 @@ def send(msg):
 
 
 if __name__ == "__main__":
-    #msg = mkmsg("This is an important message!", "dangyogi@gmail.com")
-    msg = mkmsg("Sent from python app on Raspberry PI.\r\nDid you get this message?", "matzomaan2006@gmail.com")
+    msg = mkmsg("dangyogi@gmail.com", text="This is an important message!")
+    #msg = mkmsg("matzomaan2006@gmail.com", text="Sent from python app on Raspberry PI.\r\nDid you get this message?")
     print(msg)
     send(msg)
 
