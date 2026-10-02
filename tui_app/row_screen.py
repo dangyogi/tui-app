@@ -62,6 +62,7 @@ class row_screen(tui_base.screen):
             arguments and returns None.
         '''
         super().__init__(title, back, note)
+        logger.info(f"row_screen.__init__({title=}, back={back.title if back else None}, {note=})")
         self.fields = ()
         self.global_validate = global_validate
         self.callback = callback

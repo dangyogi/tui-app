@@ -71,12 +71,12 @@ How input in processed:
       - process_mouse
         - no enclose test
         - on CLICK-DRAG, select item, unselect if not on item
-        - on DRAG-RELEASE, LEFT_CLICK, select and self.execute(), if not on command dismiss popup
+        - on DRAG-RELEASE, LEFT_CLICK, select and self.execute_selection(), if not on command dismiss popup
         - forward to popup.process_mouse
       - process_key
         - on UP, DOWN, move the selected menu item up/down one
         - on LEFT, RIGHT, move the selected menu item left/right one (multi-column)
-        - on ENTER or SPACE, return self.execute()
+        - on ENTER or SPACE, return self.execute_selection()
         - else popup.process_key
     - popup_confirm(popup_menu)
       - process_key
@@ -622,7 +622,7 @@ class popup_menu(popup):
             if self.selection - self.rows_per_col >= 0:
                 self.select(self.selection - self.rows_per_col)
         elif key == 'KEY_ENTER' or key == '\n' or key == ' ':
-            return self.execute()
+            return self.execute_selection()
         else:
             return super().process_key(key)
 
@@ -667,7 +667,7 @@ class popup_menu(popup):
             self.delete()                                    # off the menu -> dismiss
             return None
         self.select(index)
-        return self.execute()                                # on an entry -> run it
+        return self.execute_selection()                      # on an entry -> run it
 
     def _highlight_or_deselect(self, index):
         r'''During a drag: highlight `index` if on an entry, else clear the highlight (off the menu).'''
@@ -680,13 +680,13 @@ class popup_menu(popup):
         else:
             self.select(index)
 
-    def execute(self):
-        logger_execute.info(f"popup_menu.execute(): {self.selection=}")
+    def execute_selection(self):
+        logger_execute.info(f"popup_menu.execute_selection(): {self.selection=}")
         command = self.commands[self.selection]
-        logger_execute.info(f"popup_menu.execute(): {command=}")
+        logger_execute.info(f"popup_menu.execute_selection(): {command=}")
         self.delete()
         ans = self.cmd_fn(command)
-        logger_execute.info(f"popup_menu.execute() -> {ans}")
+        logger_execute.info(f"popup_menu.execute_selection() -> {ans}")
         return ans
 
     def select(self, index):
@@ -714,8 +714,8 @@ class popup_confirm(popup_menu):
     def process_key(self, key):
         if key in ('y', 'Y'):
             self.select(1)                 # Yes
-            return self.execute()
+            return self.execute_selection()
         if key in ('n', 'N'):
             self.select(0)                 # No
-            return self.execute()
+            return self.execute_selection()
         return super().process_key(key)

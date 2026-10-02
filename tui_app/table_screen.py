@@ -200,7 +200,7 @@ class table_screen(tui_base.screen):
         row = self.rows[row_index]
         logger.info(f"table_screen._open_row_popup({row_index=}, {y=}): {row=}, {row.row_popup_commands=}")
         self.popup = tui_base.popup_menu(row.human_key(), self, row.row_popup_commands,
-                                         partial(row.execute, self.app), y, 4)
+                                         row.execute, y, 4)
         return None
 
     def _open_screen_popup(self):
@@ -246,7 +246,7 @@ class table_screen(tui_base.screen):
         if self.view_edit_command not in row.row_popup_commands:
             logger.info(f"table_screen._view_edit_focused_row: {self.view_edit_command!r} not offered by row")
             return None
-        return row.execute(self, self.view_edit_command)
+        return row.execute(self.view_edit_command)
 
     def _confirm_delete_focused_row(self):
         r'''DEL: pop a y/n confirm to delete the focused row.  No-op if the row doesn't offer
@@ -274,7 +274,7 @@ class table_screen(tui_base.screen):
         '''
         if choice != 'Yes':
             return None
-        return self.rows[row_index].execute(self, self.delete_command)
+        return self.rows[row_index].execute(self.delete_command)
 
     def _create_row(self):
         r'''INS: create a new row if the table offers create_command (advertised in
@@ -511,7 +511,7 @@ class table_screen(tui_base.screen):
             logger_execute.info(f"table_screen.execute: _commit_edit failed -> None")
             return None
         logger_execute.info(f"table_screen.execute: forwarding to table")
-        ans = self.table.execute(self, command)
+        ans = self.table.execute(command)
         if ans == 'Continue':
             logger_execute.info(f"table_screen.execute: forwarding to base screen class")
             ans = super().execute(command)

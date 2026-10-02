@@ -184,7 +184,7 @@ class menu_screen(tui_base.screen):
         if action == 'Back':                    # F8 from the base screen (execute is otherwise
             return self.back                    # action-based, so it can't go through the command chain)
         logger_execute.info(f"menu_screen.execute({action.name=}): executing action {action.name}")
-        ans = action.execute(self)
+        ans = action.execute_fn()
         logger_execute.info(f"menu_screen.execute -> {ans}")
         return ans
 
