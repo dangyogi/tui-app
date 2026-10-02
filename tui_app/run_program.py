@@ -1,6 +1,7 @@
 # run_program.py
 
 from subprocess import run, CalledProcessError
+import os.path
 
 
 def git_status(ok_files=None):
@@ -92,8 +93,11 @@ def git_commit_push(message, ok_files=None, notify_fn=print):
         notify("doing push")
         git_push()
 
+def expanduser(filename):
+    return os.path.expanduser(filename)
+
 def print_file(filename):
-    run_program(["lp", filename])
+    run_program(["lp", expanduser(filename)])
 
 def run_program(command):
     try:
