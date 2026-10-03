@@ -51,7 +51,7 @@ class FakeTable:
     def get_rows(self, app, **select):
         return list(self._rows)
 
-    def execute(self, screen, command):
+    def execute(self, command):
         return 'Continue'
 
 
@@ -74,7 +74,7 @@ class FakeRow:
     def human_key(self):
         return self.get("item")
 
-    def execute(self, screen, command):
+    def execute(self, command):
         return 'Continue'
 
 
@@ -510,14 +510,14 @@ def test_f2_opens_focused_row(columns, monkeypatch):
     sentinel = Mock(name="row_screen")
     row = scr.rows[2]
     monkeypatch.setattr(row, "execute",
-                        lambda screen, cmd: sentinel if cmd == 'View/Edit' else None)
+                        lambda cmd: sentinel if cmd == 'View/Edit' else None)
     assert scr.process_key('KEY_F(2)') is sentinel   # returns the row_screen to switch to
 
 
 def test_f2_focuses_top_visible_row_when_nothing_focused(columns, monkeypatch):
     scr = make_drawn_screen(columns, 5)
     seen = {}
-    def fake_execute(screen, cmd):
+    def fake_execute(cmd):
         seen['row_index'] = scr.active_field.screen_key[0]
         return None
     for r in scr.rows:
@@ -534,7 +534,7 @@ def test_f2_noop_when_view_edit_not_offered(columns, monkeypatch):
     row = scr.rows[1]
     monkeypatch.setattr(type(row), "row_popup_commands", ('Delete',))   # no View/Edit
     called = []
-    monkeypatch.setattr(row, "execute", lambda screen, cmd: called.append(cmd))
+    monkeypatch.setattr(row, "execute", lambda cmd: called.append(cmd))
     assert scr.process_key('KEY_F(2)') is None
     assert called == []                              # execute not called
 
@@ -568,7 +568,7 @@ def test_do_delete_yes_runs_delete(columns, monkeypatch):
     scr = make_drawn_screen(columns, 3)
     called = []
     monkeypatch.setattr(scr.rows[1], "execute",
-                        lambda screen, cmd: called.append(cmd) or 'REFRESH')
+                        lambda cmd: called.append(cmd) or 'REFRESH')
     assert scr._do_delete(1, 'Yes') == 'REFRESH'
     assert called == ['Delete']
 
@@ -576,7 +576,7 @@ def test_do_delete_yes_runs_delete(columns, monkeypatch):
 def test_do_delete_no_is_noop(columns, monkeypatch):
     scr = make_drawn_screen(columns, 3)
     called = []
-    monkeypatch.setattr(scr.rows[1], "execute", lambda screen, cmd: called.append(cmd))
+    monkeypatch.setattr(scr.rows[1], "execute", lambda cmd: called.append(cmd))
     assert scr._do_delete(1, 'No') is None
     assert called == []
 

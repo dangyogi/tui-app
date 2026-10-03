@@ -107,7 +107,7 @@ def test_left_click_runs_action():
     m = make_menu()
     for i, f in enumerate(m.fields):
         f.enclose.return_value = (i == 0)         # pointer over field 0 (runnable)
-        f.action.execute.return_value = f"ran{i}"
+        f.action.execute_fn.return_value = f"ran{i}"
     result = m.process_mouse((0, 5, 5, 0, tui_base.curses.BUTTON1_CLICKED))
     assert result == "ran0"                       # a single click runs the action (UI line 45)
     m.fields[0].activate.assert_called_once()     # ...selecting it first

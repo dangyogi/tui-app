@@ -99,7 +99,7 @@ def expanduser(filename):
 def print_file(filename, copies=1, portrait=True):
     command = ["lp"]
     if not portrait:
-        command.extend(["-o", "orientation-requested=5"]"])   # 4 is rotated 90 counter-clockwise, 5 is rotated 90 clockwise
+        command.extend(["-o", "orientation-requested=5"])   # 4 is rotated 90 counter-clockwise, 5 is rotated 90 clockwise
     if copies > 1:
         command.extend(["-n", str(copies)])
     command.append(expanduser(filename))
