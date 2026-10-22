@@ -45,11 +45,11 @@ import logging
 from datetime import datetime
 
 logger_execute = logging.getLogger('tui-app.execute')
-Date_format = "%m/%d/%y"
-Datetime_format = "%y-%m-%d@%H:%M"
+Log_date_format = "%m/%d/%y"
+Log_datetime_format = "%y-%m-%d@%H:%M"
 
 logging.basicConfig(level=logging.INFO,
-                    filename=f"log_{datetime.now():{Datetime_format}}.txt", datefmt=Date_format)
+                    filename=f"log_{datetime.now():{Log_datetime_format}}.txt", datefmt=Log_date_format)
 
 from . import tui_base
 from .table_screen import table_screen
