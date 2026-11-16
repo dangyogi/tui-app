@@ -244,6 +244,14 @@ class row_screen(tui_base.screen):
                     self.callback()
                 logger_execute.info(f"row_screen.execute -> {self.back=}")
                 return self.back
+        row = getattr(self, 'row', None)
+        if row is not None and command in row.row_screen_commands:
+            # custom form button: a method on the row being edited (the copy -- Apply/Cancel decide
+            # whether its changes are kept), taking the app like row_popup_command_fns methods
+            logger_execute.info(f"row_screen.execute: calling self.row.{command}")
+            ans = getattr(row, command)(self.app)
+            logger_execute.info(f"row_screen.execute: self.row.{command} -> {ans}")
+            return ans
         logger_execute.info(f"row_screen.execute: forwarding to base screen class")
         ans = super().execute(command)
         logger_execute.info(f"row_screen.execute -> {ans}")

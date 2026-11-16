@@ -14,7 +14,8 @@ It builds on three classes that you must write with the following interfaces:
                                  # select keys are column_name (__eq assumed), or column_name__<lt|le|eq|ne|ge|gt>
                                  # results of select keys are and-ed.
                                  # This library does not support paging to the data.
-        .execute(app, command)   # for anything on screen popup other than table_names or Back/Abort/Exit
+        .execute(command)        # for anything on screen popup other than table_names or Back/Abort/Exit;
+                                 #   returns 'Continue' for commands it doesn't handle
 
     column:
         .name
@@ -33,10 +34,10 @@ It builds on three classes that you must write with the following interfaces:
         .human_key()            # may be row_num
         .get(column_name)       # returns string to display
         .set(column_name, str)  # sets column_name to converted str
-        .delete()
         .row_popup_commands
-        .row_screen_commands
-        .execute(app, command)  # for commands on row popup
+        .row_screen_commands    # extra row_screen buttons; each is a method on the row taking the app
+                                #   (called on the row_screen's copy of the row)
+        .execute(command)       # for commands on row popup
 
 See the tui_base.py module doc string for how the tui library works.
 '''

@@ -375,6 +375,32 @@ def test_accept_blanked_required_field_shows_message_and_stays():
     assert f.changed                            # still pending, for the user to fix
 
 
+class ButtonFakeRow(FakeRow):
+    r'''A row with a custom row_screen button, "Double".'''
+    row_screen_commands = ("Double",)
+
+    def copy(self):
+        return ButtonFakeRow(self.columns, self._values)
+
+    def Double(self, app):
+        self.set("qty", str(2 * int(self.get("qty"))))
+        return ("doubled", app)
+
+
+def test_row_screen_command_runs_on_copy_with_app():
+    cols = [FakeColumn("qty", can_edit=True)]
+    master = ButtonFakeRow(cols, {"qty": "3"})
+    s = row_screen.for_update(master)
+    s.app = Mock(name="app")
+    s.cols = 80
+    s.lines = 40
+    s.init()
+    assert s.row_screen_commands == ["Double", "Cancel", "Apply"]
+    assert s.execute("Double") == ("doubled", s.app)
+    assert s.row.get("qty") == "6"              # the copy changed ...
+    assert master.get("qty") == "3"             # ... not the master (that's Apply)
+
+
 def test_apply_after_blanking_optional_field():
     # blanking an optional field then Apply must not choke (copy_to_master uses the csv string)
     cols = [FakeColumn("a", can_edit=True)]
