@@ -106,3 +106,11 @@ def test_parse_git_ok_files_errors(sections, ok_files, bad_file):
     with pytest.raises(ValueError) as exc:
         parse_git('\n\n'.join(Sections[s] for s in sections.split(',')), ok_files)
     assert exc.value.args[0] == "Unexpected modified: " + bad_file
+
+
+def test_parse_git_unknown_second_line():
+    behind = "On branch main\nYour branch is behind 'origin/main' by 2 commits."
+    with pytest.raises(ValueError) as exc:      # used to raise NameError (line vs lines)
+        parse_git(behind)
+    assert exc.value.args[0] == \
+           "Unknown second line to 'On branch main': Your branch is behind 'origin/main' by 2 commits."

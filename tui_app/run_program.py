@@ -26,7 +26,7 @@ def parse_git(stdout, ok_files=None):
             if lines[1].startswith("Your branch is ahead"):
                 flags.add("needs push")
                 continue
-            raise ValueError(f"Unknown second line to 'On branch main': {line[1]}")
+            raise ValueError(f"Unknown second line to 'On branch main': {lines[1]}")
        #if section.startswith("Changes to be committed:\n"):
        #    flags.add("needs commit")
        #    continue
