@@ -184,8 +184,8 @@ class FakeColumn:
         self.edit_width = edit_width
         self.alignment = alignment
 
-    def validate(self, s):
-        pass
+    def parse(self, s):
+        return s
 
     def column_attr_pair(self, row):
         return 0x70

@@ -42,8 +42,8 @@ class FakeColumn:
         self.alignment = alignment
         self._attr_pair = attr_pair
 
-    def validate(self, s):
-        pass
+    def parse(self, s):
+        return s
 
     def column_attr_pair(self, row):
         return self._attr_pair
@@ -68,7 +68,7 @@ def test_single_line_shared_read_only(app):
     assert shared.left_placeholder == "<" and shared.right_placeholder == ">"
     assert shared.alignment == "left"
     assert shared.column is col
-    assert shared.convert_fn == col.validate
+    assert shared.convert_fn == col.parse
 
 
 def test_single_line_shared_editable_keeps_alignment(app):

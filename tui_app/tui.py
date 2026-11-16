@@ -22,8 +22,8 @@ It builds on three classes that you must write with the following interfaces:
         .min_width               # may be None, used for table view to fit all of the columns on the screen
         .alignment               # "left" or "right"
         .can_edit                # True/False
-        .validate(s)             # returns s converted to its python value; raises ValueError if invalid
-                                 #   (the field stores this as its convert_fn)
+        .parse(s)                # returns s converted to its python value; raises ValueError if invalid
+                                 #   (the field stores this as its convert_fn; only called on non-blank s)
         .column_attr_pair(row)   # returns attr_pair for column, or None for default attr
         .hidden                  # True to omit from table_screen
 

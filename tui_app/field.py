@@ -829,7 +829,7 @@ def single_line_shared(column, name, begin_x, ncols, app):
     the column's alignment).  Picks editable vs read-only from column.can_edit.
     '''
     cls = editable_single_shared if column.can_edit else read_only_single_shared
-    return cls(name, 1, begin_x, ncols, app, column.validate, column.alignment,
+    return cls(name, 1, begin_x, ncols, app, column.parse, column.alignment,
                left_placeholder="<", right_placeholder=">", column=column)
 
 
@@ -840,5 +840,5 @@ def multi_line_shared(column, begin_x, ncols, app, *, nlines, creating):
     '''
     editable = ((not column.calculated) or column.can_edit) if creating else column.can_edit
     cls = editable_multi_shared if editable else read_only_multi_shared
-    return cls(column.name, nlines, begin_x, ncols, app, column.validate,
+    return cls(column.name, nlines, begin_x, ncols, app, column.parse,
                left_placeholder="", right_placeholder="", column=column)

@@ -298,7 +298,7 @@ class table_screen(tui_base.screen):
     def _commit_edit(self):
         r'''Write the focused cell through to its row if it changed (marking the app changed) and
         recompute that row's calculated cells.  Returns True on success (or nothing to commit); on a
-        validation error (column.validate / to_python raising ValueError) pops an error message and
+        validation error (column.parse / to_python raising ValueError) pops an error message and
         returns False so the caller (_focus_cell) leaves focus on the cell to be fixed.  Write-through
         does NOT Save; that stays a separate app command.
         '''
@@ -309,7 +309,7 @@ class table_screen(tui_base.screen):
         name = self.columns[col].name
         try:
             if field.text.strip():           # empty is a required-check concern, not the converter's
-                field.convert()              # convert_fn (column.validate) may raise ValueError
+                field.convert()              # convert_fn (column.parse) may raise ValueError
             self.rows[row].set(name, field.text)   # to_python may also raise ValueError
         except ValueError as exc:
             self._cell_error(str(exc))

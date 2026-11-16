@@ -32,8 +32,8 @@ class FakeColumn:
         self.alignment = alignment
         self.hidden = hidden
 
-    def validate(self, s):
-        pass
+    def parse(self, s):
+        return s
 
     def column_attr_pair(self, row):
         return None
