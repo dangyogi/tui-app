@@ -343,6 +343,38 @@ def test_accept_blanked_field_skips_type_check():
     assert s.row.get("qty") == ""               # written as blank (required-check handles required)
 
 
+class RequiredFakeRow(FakeRow):
+    r'''Like the real Row.set: blanking a required column raises ValueError.'''
+    required = ("price",)
+
+    def copy(self):
+        return RequiredFakeRow(self.columns, self._values)
+
+    def set(self, name, val):
+        if name in self.required and not val.strip():
+            raise ValueError(f"{name}: requires a value")
+        super().set(name, val)
+
+
+def test_accept_blanked_required_field_shows_message_and_stays():
+    cols = [FakeColumn("price", can_edit=True)]
+    s = row_screen.for_update(RequiredFakeRow(cols, {"price": "2.50"}))
+    s.app = Mock(name="app")
+    s.cols = 80
+    s.lines = 40
+    s.init()
+    s.draw_body()
+    s.button_y = 20
+    f = s.fields[0]
+    f.text = ""                                 # blank the required field
+    f.changed = True
+    assert s.accept_field(f) is False           # used to raise ValueError out of accept_field
+    assert s.msg_len > 0                        # "price: requires a value" shown
+    assert s.row.get("price") == "2.50"         # NOT written
+    assert "price" not in s.attrs_changed
+    assert f.changed                            # still pending, for the user to fix
+
+
 def test_apply_after_blanking_optional_field():
     # blanking an optional field then Apply must not choke (copy_to_master uses the csv string)
     cols = [FakeColumn("a", can_edit=True)]

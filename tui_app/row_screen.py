@@ -256,13 +256,15 @@ class row_screen(tui_base.screen):
         '''
         if not field.changed:
             return True
-        if field.text.strip():                   # only type-check a non-empty value; an empty
-            try:                                  # (blanked) field is the required-check's concern,
-                field.convert()                  # not the column converter's (e.g. float('') raises)
-            except ValueError as exc:
-                self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
-                return False
-        self.row.set(field.name, field.text)     # into the copy, NOT the master (that's Apply)
+        try:
+            if field.text.strip():               # only type-check a non-empty value; an empty
+                field.convert()                  # (blanked) field is the required-check's concern,
+                                                 # not the column converter's (e.g. float('') raises)
+            self.row.set(field.name, field.text) # into the copy, NOT the master (that's Apply);
+                                                 # raises ValueError if a required field is blanked
+        except ValueError as exc:
+            self.message(str(exc), tui_base.curses.color_pair(self.error_msg_attr))
+            return False
         self.attrs_changed.add(field.name)
         field.changed = False
         field.snapshot = field.text              # new abort baseline: a later Esc undoes to HERE

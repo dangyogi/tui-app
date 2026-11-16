@@ -735,3 +735,31 @@ def test_recompute_row_tolerates_calc_error(columns):
     scr.rows[0].get = raising_get
     scr._recompute_row(0)                           # must not raise
     assert scr.row_fields[0][2].text == ""          # calc cell blanked
+
+
+def _right_click(scr, y):
+    return scr.process_mouse((0, 5, y, 0, tui_base.curses.BUTTON3_CLICKED))
+
+
+def test_right_click_on_row_opens_row_popup(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 3)
+    rec = {}
+    monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory(rec))
+    assert _right_click(scr, 3) is None           # line 3 = rows[1]
+    assert scr.popup is not None
+    assert rec['commands'] == ('View/Edit', 'Delete')
+    assert scr.popup_y == 1
+
+
+def test_right_click_below_last_row_is_ignored(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 2, lines=10)  # rows on lines 2-3; lines 4-9 are blank
+    monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory({}))
+    assert _right_click(scr, 6) is None           # used to raise IndexError
+    assert scr.popup is None
+
+
+def test_right_click_on_empty_table_is_ignored(columns, monkeypatch):
+    scr = make_drawn_screen(columns, 0)
+    monkeypatch.setattr(tui_base, "popup_menu", fake_popup_menu_factory({}))
+    assert _right_click(scr, 2) is None           # used to raise IndexError
+    assert scr.popup is None

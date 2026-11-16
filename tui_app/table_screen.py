@@ -104,7 +104,11 @@ class table_screen(tui_base.screen):
         logger_mouse.info(f"table_screen.process_mouse({y=}, {x=}, bstate={tui_base.bstate_str(bstate)})")
         if bstate == curses.BUTTON3_CLICKED:
             if y >= 2:
-                self._open_row_popup(self.first_row + (y - 2), y + 1)   # row popup below the row
+                row_index = self.first_row + (y - 2)
+                if row_index < len(self.rows):
+                    self._open_row_popup(row_index, y + 1)              # row popup below the row
+                else:
+                    logger_mouse.info(f"table_screen.process_mouse: {row_index=} past last row, ignored")
             else:
                 self._open_screen_popup()                              # table-level popup at the top
             return None
