@@ -4,19 +4,26 @@ from subprocess import run, CalledProcessError
 import os.path
 
 
-def git_status(ok_files=None):
+def git_status(ok_files=None, cwd=None):
     r'''Returns set of "needs commit", "needs -a", "needs push".
 
     Or empty set if no action needed.
-    '''
-    stdout = run_program(["git", "status"])
-    return parse_git(stdout, ok_files)
 
-def parse_git(stdout, ok_files=None):
+    Runs git in `cwd` (default: the current directory).
+    '''
+    stdout = run_program(["git", "status"], cwd)
+    return parse_git(stdout, ok_files, cwd)
+
+def parse_git(stdout, ok_files=None, cwd=None):
     r'''Returns set of "needs commit", "needs -a", "needs push".
 
     Or empty set if no action needed.
+
+    ok_files may be absolute or relative (to the current directory); git status prints paths
+    relative to `cwd` (where git ran), so both are compared as absolute paths.
     '''
+    if ok_files is not None:
+        ok_files = {os.path.realpath(f) for f in ok_files}
     flags = set()
     for section in stdout.split("\n\n"):
         if section.startswith("On branch main\n"):
@@ -37,7 +44,8 @@ def parse_git(stdout, ok_files=None):
                     if line.startswith("("):
                         continue
                     line_split = line.split()
-                    if line_split[0] == "modified:" and line_split[1] in ok_files:
+                    if line_split[0] == "modified:" and \
+                       os.path.realpath(os.path.join(cwd or os.getcwd(), line_split[1])) in ok_files:
                         continue
                     raise ValueError(f"Unexpected {' '.join(line_split)}")
             flags.add("needs commit")
@@ -54,10 +62,10 @@ def parse_git(stdout, ok_files=None):
         raise ValueError(f"Unknown git output: {line1}")
     return flags
 
-def git_commit(message):
-    run_program(["git", "commit", "-a", "-m", message])
+def git_commit(message, cwd=None):
+    run_program(["git", "commit", "-a", "-m", message], cwd)
 
-def git_push():
+def git_push(cwd=None):
     # git push output looks like this:
     #
     # Enumerating objects: 11, done.
@@ -71,11 +79,13 @@ def git_push():
     #    b82274d..0c8cee0  main -> main
     #
     # the last 2 lines go to stderr.  The rest don't show up in stdout when stdout is redirected.
-    out = run_program(["git", "push"])
+    out = run_program(["git", "push"], cwd)
    #print(out)  # only shows the last 2 lines
 
-def git_commit_push(message, ok_files=None, notify_fn=print):
-    status = git_status(ok_files)
+def git_commit_push(message, ok_files=None, notify_fn=print, cwd=None):
+    r'''Runs git in `cwd` (default: the current directory).
+    '''
+    status = git_status(ok_files, cwd)
     push = "needs push" in status
     notify_message = ""
     def notify(text):
@@ -87,11 +97,11 @@ def git_commit_push(message, ok_files=None, notify_fn=print):
         notify_fn(notify_message)
     if "needs commit" in status:
         notify("doing commit")
-        git_commit(message)
+        git_commit(message, cwd)
         push = True
     if push:
         notify("doing push")
-        git_push()
+        git_push(cwd)
 
 def expanduser(filename):
     return os.path.expanduser(filename)
@@ -105,9 +115,9 @@ def print_file(filename, copies=1, portrait=True):
     command.append(expanduser(filename))
     run_program(command)
 
-def run_program(command):
+def run_program(command, cwd=None):
     try:
-        cp = run(command, capture_output=True, text=True, check=True)
+        cp = run(command, capture_output=True, text=True, check=True, cwd=cwd)
     except CalledProcessError as exc:
        #if exc.stdout:
        #    print("stdout:", exc.stdout)

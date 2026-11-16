@@ -114,3 +114,11 @@ def test_parse_git_unknown_second_line():
         parse_git(behind)
     assert exc.value.args[0] == \
            "Unknown second line to 'On branch main': Your branch is behind 'origin/main' by 2 commits."
+
+
+def test_parse_git_ok_files_absolute_with_cwd(tmp_path):
+    # git status prints paths relative to where git ran (cwd); ok_files may be absolute
+    status = Sections['line1'] + '\n\n' + Sections['not_staged']        # modified: actions.py
+    assert parse_git(status, [str(tmp_path / "actions.py")], cwd=str(tmp_path)) == {"needs commit", "needs -a"}
+    with pytest.raises(ValueError):
+        parse_git(status, [str(tmp_path / "other.py")], cwd=str(tmp_path))
